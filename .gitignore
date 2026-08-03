@@ -1,0 +1,12 @@
+# Large binaries — never push
+wheelhouse/
+.air/
+__pycache__/
+*.pyc
+*.gen
+
+# Local-only generated files with hardcoded verification values — do NOT push
+*.verify.yaml
+
+# Internal work log (contains internal chronology; not for public repo)
+STATUS.md

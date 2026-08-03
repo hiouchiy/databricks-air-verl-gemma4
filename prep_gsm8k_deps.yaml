@@ -1,0 +1,70 @@
+# =============================================================================
+# Prepare a TINY, TEXT-ONLY gsm8k dataset on 1x A10 using the base env (only
+# datasets/pyarrow). Writes verl-format parquet to a UC Volume.
+# This is a "does it run" smoke: 64 train / 8 test samples only.
+#
+# WHY gsm8k (text) instead of geo3k (images): verl 0.7.1's processor factory only
+# allow-lists Qwen/GLM/Mllama vision processors and raises "Unsupported processor
+# type: Gemma4Processor" for Gemma4, so the geo3k image path can't build messages
+# (rl_dataset _build_messages asserts "processor is needed to process image").
+# gsm8k is text-only, so no multimodal processor is needed — this exercises the
+# Gemma4 MoE + verl + FSDP2 GRPO stack end-to-end. (See STATUS.md.)
+#
+#   air run --file prep_gsm8k_deps.yaml -p <PROFILE> --watch
+# =============================================================================
+
+experiment_name: prep-gsm8k-deps
+mlflow_experiment_directory: /Workspace/Users/__WS_EMAIL__/prep-gsm8k-deps
+
+compute:
+  num_accelerators: 1
+  accelerator_type: GPU_1xA10
+
+environment:
+  version: 'databricks_ai_v5'
+  dependencies:
+    - datasets>=3.0
+    - pyarrow>=19.0.0
+
+env_variables:
+  HF_HOME: /tmp/hf
+  GSM8K_OUT_DIR: __VOL__/gsm8k
+
+max_retries: 0
+timeout_minutes: 40
+
+# gsm8k prep embedded inline (deps path uploads no code snapshot). Tiny sample.
+# Mirrors verl's official examples/data_preprocess/gsm8k.py format: prompt as a
+# chat message, ground_truth = the exact answer string after "####", reward via
+# verl's default math reward (extract \boxed{} / #### and grade).
+command: |
+  python3 - <<'PYEOF'
+  import os, re
+  import datasets
+  OUT = os.environ.get("GSM8K_OUT_DIR", "__VOL__/gsm8k")
+  MAXN = 64
+  INSTR = (r"Let's think step by step and output the final answer after \"####\".")
+  DS = "openai/gsm8k"
+  def extract_solution(sol: str) -> str:
+      # gsm8k answers end with "#### <number>"
+      m = re.search(r"#### (\-?[0-9\.\,]+)", sol)
+      return m.group(1).replace(",", "").strip() if m else sol.strip()
+  def mk(split):
+      def fn(ex, idx):
+          q = ex.pop("question")
+          ans = ex.pop("answer")
+          gt = extract_solution(ans)
+          return {"data_source": "openai/gsm8k",
+                  "prompt": [{"role": "user", "content": q + " " + INSTR}],
+                  "ability": "math",
+                  "reward_model": {"style": "rule", "ground_truth": gt},
+                  "extra_info": {"split": split, "index": idx, "answer": ans, "question": q}}
+      return fn
+  d = datasets.load_dataset(DS, "main")
+  tr = d["train"].select(range(min(MAXN, len(d["train"])))).map(mk("train"), with_indices=True)
+  te = d["test"].select(range(min(8, len(d["test"])))).map(mk("test"), with_indices=True)
+  os.makedirs(OUT, exist_ok=True)
+  tr.to_parquet(os.path.join(OUT, "train.parquet"))
+  te.to_parquet(os.path.join(OUT, "test.parquet"))
+  print(f"Wrote {len(tr)} train / {len(te)} test to {OUT}")
+  PYEOF

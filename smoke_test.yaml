@@ -1,0 +1,31 @@
+# =============================================================================
+# Cheap smoke test on 1x A10 — validates the verl image + Gemma4 arch before
+# committing 8x H100. Run this FIRST.
+#
+#   air run --file smoke_test.yaml -p <PROFILE> --watch
+# =============================================================================
+
+experiment_name: smoke-verl-gemma4
+mlflow_experiment_directory: /Workspace/Users/__WS_EMAIL__/smoke-verl-gemma4
+
+compute:
+  num_accelerators: 1
+  accelerator_type: GPU_1xA10
+
+environment:
+  docker_image:
+    url: __IMAGE__
+
+# gemma-4-26B-A4B is Apache-2.0 and NOT gated (no HF_TOKEN needed). smoke_test.py
+# is baked into the image at /app (see Dockerfile COPY), so no code_source upload
+# is required. When testing on an image that does NOT bake in the updated
+# smoke_test.py, upload it via code_source or run the check inline instead.
+env_variables:
+  HF_HOME: /tmp/hf
+  TOKENIZERS_PARALLELISM: "true"
+
+max_retries: 0
+timeout_minutes: 30
+
+command: |
+  python3 /app/smoke_test.py

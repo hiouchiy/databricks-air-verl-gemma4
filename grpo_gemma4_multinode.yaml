@@ -1,0 +1,62 @@
+# =============================================================================
+# MULTI-NODE variant: verl GRPO + FSDP2 for Gemma4-26B-A4B (MoE) on 2 x 8xH100
+# (16 GPUs).
+#
+# Differences vs single-node grpo_gemma4.yaml:
+#   - compute.num_accelerators: 16  (= total GPUs; nodes = 16/8 = 2, auto-derived)
+#   - command runs run_grpo_multinode.sh, which forms a Ray cluster across the
+#     two nodes (head on NODE_RANK 0 + workers join) before launching verl.
+#     verl uses Ray, so this orchestration is REQUIRED (unlike the torchrun SFT
+#     example). Adapted from verl's SkyPilot/Slurm multi-node pattern onto AI
+#     Runtime's injected NODE_RANK/MASTER_ADDR.
+#
+#   air run --file grpo_gemma4_multinode.yaml -p <PROFILE> --watch
+#
+# Refs: docs .../cli/examples/multinode-llm-sft ; verl multinode.rst
+# =============================================================================
+
+experiment_name: grpo-gemma4-26b-a4b-2node
+mlflow_experiment_directory: /Workspace/Users/__WS_EMAIL__/grpo-gemma4-26b-a4b-2node
+
+compute:
+  num_accelerators: 16          # 2 nodes x 8 H100 (node count derived as 16/8)
+  accelerator_type: GPU_8xH100
+
+environment:
+  docker_image:
+    url: __IMAGE__
+
+code_source:
+  type: snapshot
+  snapshot:
+    root_path: .
+    include_paths:
+      - run_grpo_multinode.sh
+      - run_grpo.sh
+      - smoke_test.py
+
+env_variables:
+  HF_HOME: /tmp/hf
+  TOKENIZERS_PARALLELISM: "true"
+  NCCL_DEBUG: WARN
+  VLLM_LOGGING_LEVEL: WARN
+  RAY_TEMP_DIR: /tmp/ray
+  OPENSSL_FORCE_FIPS_MODE: "0"
+  OPENSSL_FIPS: "0"
+
+max_retries: 0
+timeout_minutes: 240
+
+parameters:
+  model_name: google/gemma-4-26B-A4B-it
+  train_files: __VOL__/gsm8k/train.parquet
+  val_files: __VOL__/gsm8k/test.parquet
+  output_dir: __VOL__/ckpt/grpo-gemma4-26b-a4b-2node
+  total_epochs: 1
+  total_training_steps: 3
+
+# run_grpo_multinode.sh reads params from $HYPERPARAMETERS_PATH, forms the Ray
+# cluster across nodes, then launches verl with trainer.nnodes=2.
+command: |
+  cd $CODE_SOURCE_PATH
+  bash run_grpo_multinode.sh

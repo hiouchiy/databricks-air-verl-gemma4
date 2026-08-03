@@ -1,0 +1,78 @@
+# =============================================================================
+# MULTIMODAL + MULTI-NODE sample: verl GRPO + FSDP2 for Gemma4-26B-A4B (MoE) on
+# 2 x 8xH100 (16 GPUs), using IMAGE data (geo3k).
+#
+# Combines:
+#   - the multi-node Ray orchestration of grpo_gemma4_multinode.yaml
+#     (run_grpo_multinode.sh forms the Ray cluster across nodes), and
+#   - the multimodal setup of grpo_gemma4_mm.yaml (verl main + Gemma4 vision
+#     processor + image data + the memory settings proven on single node).
+#
+# 16-GPU batch constraint: (train_batch_size * rollout.n) must be divisible by
+# verl's minimal batch unit (16). Single node used 4*2=8; here we use 8*2=16.
+# Memory is split across 2 nodes, so we can afford a larger batch than 1 node.
+#
+#   air run --file grpo_gemma4_mm_multinode.yaml -p <PROFILE> --watch
+# =============================================================================
+
+experiment_name: grpo-gemma4-26b-a4b-mm-2node
+mlflow_experiment_directory: /Workspace/Users/__WS_EMAIL__/grpo-gemma4-26b-a4b-mm-2node
+
+compute:
+  num_accelerators: 16          # 2 nodes x 8 H100 (node count derived as 16/8)
+  accelerator_type: GPU_8xH100
+
+environment:
+  docker_image:
+    url: __IMAGE__
+
+code_source:
+  type: snapshot
+  snapshot:
+    root_path: .
+    include_paths:
+      - run_grpo_multinode.sh
+      - run_grpo.sh
+      - smoke_test.py
+
+env_variables:
+  HF_HOME: /tmp/hf
+  TOKENIZERS_PARALLELISM: "true"
+  NCCL_DEBUG: WARN
+  VLLM_LOGGING_LEVEL: WARN
+  RAY_TEMP_DIR: /tmp/ray
+  OPENSSL_FORCE_FIPS_MODE: "0"
+  OPENSSL_FIPS: "0"
+  # MULTIMODAL: verl main (Gemma4 vision processor) installed on every node at
+  # launch by run_grpo_multinode.sh; use the image column.
+  MULTIMODAL: "1"
+  IMAGE_KEY: images
+  # Memory settings (same proven set as single-node multimodal; see STATUS.md).
+  ROLLOUT_GPU_MEM_UTIL: "0.5"
+  ENFORCE_EAGER: "True"
+  ACT_OFFLOAD: "True"
+  MAX_NUM_BATCHED_TOKENS: "4096"   # > a single image's 2496 tokens
+  # 16-GPU divisibility: train_batch_size * rollout.n = 8 * 2 = 16 (OK).
+  # ppo_mini_batch_size <= train_batch_size. Larger than single node (mem split over 2 nodes).
+  TRAIN_BATCH_SIZE: "8"
+  PPO_MINI_BATCH: "8"
+  ROLLOUT_N: "2"
+  MAX_PROMPT_LEN: "768"
+  MAX_RESPONSE_LEN: "512"
+
+max_retries: 0
+timeout_minutes: 240
+
+parameters:
+  model_name: google/gemma-4-26B-A4B-it
+  train_files: __VOL__/geo3k/train.parquet
+  val_files: __VOL__/geo3k/test.parquet
+  output_dir: __VOL__/ckpt/grpo-gemma4-26b-a4b-mm-2node
+  total_epochs: 1
+  total_training_steps: 3
+
+# run_grpo_multinode.sh reads params from $HYPERPARAMETERS_PATH, installs verl main
+# (MULTIMODAL=1) on each node, forms the Ray cluster, then launches verl (nnodes=2).
+command: |
+  cd $CODE_SOURCE_PATH
+  bash run_grpo_multinode.sh
