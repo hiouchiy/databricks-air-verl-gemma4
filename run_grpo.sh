@@ -267,6 +267,17 @@ ROLLOUT=(
     # (same safe value proven on the Qwen3.5 stack; adjust if the bucket error persists).
     actor_rollout_ref.rollout.checkpoint_engine.update_weights_bucket_megabytes=6144
 )
+# MULTIMODAL vLLM fix: vLLM 0.24's Gemma4 vision path emits garbage (word salad) for
+# image inputs due to a use_bidirectional_attention / use_mm_prefix regression
+# (vLLM issue #41403; fixed in vLLM >=0.25). Workaround WITHOUT upgrading vLLM: pass
+# hf_overrides to the rollout engine to null out use_bidirectional_attention. Verified
+# on a node: with this override the image response is coherent + contains \boxed{}.
+# verl forwards rollout.engine_kwargs.vllm.* into vLLM's AsyncLLM (**engine_kwargs);
+# hf_overrides is a dict (non-None) so verl's None-filter keeps it. Only set it in
+# multimodal mode (text runs don't need it).
+if [ "${MULTIMODAL:-0}" = "1" ]; then
+    ROLLOUT+=( '+actor_rollout_ref.rollout.engine_kwargs.vllm.hf_overrides={text_config:{use_bidirectional_attention:null}}' )
+fi
 
 TRAINER=(
     trainer.critic_warmup=0

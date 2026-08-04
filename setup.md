@@ -297,17 +297,25 @@ air run --file grpo_gemma4_multinode.yaml -p PROF --watch
 
 §4・§5 は既定でテキストのみ（gsm8k）です。Gemma4 は**マルチモーダル（画像＋テキスト）**モデルなので、
 **画像入りデータ（geo3k 等）**でも GRPO できます。ただし追加の要件があります（実機検証済み・単ノード
-8×H100／マルチノード 2ノード16×H100 の両方で `Training Progress 100% (3/3)`）。
+8×H100／マルチノード 2ノード16×H100 の両方で `Training Progress 100% (3/3)` かつ **報酬 >0**）。
 
 ### 6-1. なぜ追加要件が要るか（重要）
-- **verl のリリース版（0.8.0 含む）は Gemma4 の画像プロセッサ（`Gemma4Processor`）に未対応**で、
-  画像データを渡すと `Unsupported processor type: Gemma4Processor` /
-  `processor is needed to process image and video` で失敗します。
-  Gemma4 画像対応は **verl の `main` ブランチ**に入っています（PR #4759。リリース未反映）。
-  → **`MULTIMODAL=1` を指定すると `run_grpo.sh` が起動時に verl main を `--no-deps` で入れ替え**ます
-  （併せて main の新依存 `TransferQueue` も導入。transformers 5.14 等は維持）。
-- 画像は **vision タワー + 多数の画像トークン**でメモリを多く使うため、単ノードではメモリ調整が必要
-  （下記 6-3）。
+画像入り GRPO には次の3つの追加要件があります（すべて `MULTIMODAL=1` 指定時に `run_grpo.sh` /
+`run_grpo_multinode.sh` が自動で行い、`grpo_gemma4_mm*.yaml` に設定済み）:
+
+1. **verl main が必要**（画像プロセッサ対応）。verl のリリース版（0.8.0 含む）は Gemma4 の
+   `Gemma4Processor` に未対応で、画像データは `Unsupported processor type: Gemma4Processor` /
+   `processor is needed to process image and video` で失敗します。対応は **`main` ブランチ**のみ
+   （PR #4759、リリース未反映）。→ `MULTIMODAL=1` で起動時に verl main を `--no-deps` で入れ替え
+   （新依存 `TransferQueue` も導入。transformers 5.14 等は維持）。
+2. **vLLM の Gemma4 vision バグ回避（重要）**。vLLM 0.24 は Gemma4 の画像入力で**出力が文字化け**
+   （word salad）し、報酬が 0 になります（テキストは正常。vLLM issue #41403、v0.25+ で修正）。
+   イメージ再ビルドを避ける回避策として、rollout の vLLM に **`hf_overrides` で
+   `use_bidirectional_attention=null`** を渡します（`run_grpo.sh` が MULTIMODAL 時に自動付与:
+   `+actor_rollout_ref.rollout.engine_kwargs.vllm.hf_overrides={text_config:{use_bidirectional_attention:null}}`）。
+   これで画像に対しコヒーレントな応答（`<think>`＋`\boxed{}`）が生成され、報酬が付きます。
+3. **メモリ調整**。画像は vision タワー + 多数の画像トークンでメモリを多く使うため、単ノードでは
+   バッチ削減等が必要（下記 6-3）。
 
 ### 6-2. 実行（単ノード / マルチノード）
 画像入りデータ（verl の geo3k 形式、`images` 列を持つ parquet）を Volume に用意した上で:
@@ -336,12 +344,16 @@ air run --file grpo_gemma4_mm_multinode.yaml -p PROF --watch
 > 本番のメモリ・スループット最適化はデータや画像解像度で変わります。上記は「小データで動くこと」を
 > 確認した保守的な値です。
 
-### 6-4. 既知の課題（正直な注記）
-- 上記の疎通確認では学習は完走しますが、**報酬が 0 のまま**でした
-  （`critic/rewards/mean = 0`）。geo3k の報酬関数が Gemma4 の応答フォーマット（`\boxed{}` 抽出など）を
-  拾えていないためと考えられます（テキストの gsm8k では報酬 0.7〜0.97 が出ます）。
-  **実学習として意味を持たせるには、データのプロンプト整形／報酬関数を対象モデルの応答に合わせて
-  調整**してください（パイプラインの疎通自体は成立しています）。
+### 6-4. 報酬について（重要な経緯）
+- 当初、画像 GRPO は完走するが **報酬が 0** でした。切り分けの結果、原因は「報酬関数」ではなく
+  **6-1(2) の vLLM vision バグ**で、rollout の生成が文字化けしていたためと判明しました
+  （テキストは正常に生成・採点され報酬 0.7〜0.97）。
+- **`hf_overrides` で `use_bidirectional_attention=null` を適用後、画像でも報酬が付きます**
+  （実機: 単ノード `critic/rewards/mean≈0.24, max 1.0`、マルチノード `mean 0.06–0.39, max 1.0`。
+  `grad_norm`・`pg_loss` も非ゼロ＝方策が実際に更新される意味のある学習）。
+- ここまでで「小データでの疎通＋報酬が付くこと」は確認済みです。**本番の実学習**では、データ件数・
+  ステップ数を増やし、必要に応じてプロンプト整形や報酬関数を用途に合わせて調整してください
+  （報酬値そのものはデータ・エポック数で変わります）。
 
 ---
 

@@ -246,6 +246,11 @@ ROLLOUT=(
     # 0.7.1 — that path raises "unexpected keyword argument"). Raise to 6144 MB.
     actor_rollout_ref.rollout.checkpoint_engine.update_weights_bucket_megabytes=6144
 )
+# MULTIMODAL vLLM fix (see run_grpo.sh): null out use_bidirectional_attention via
+# hf_overrides to avoid vLLM 0.24's Gemma4 vision garbage-output bug (issue #41403).
+if [ "${MULTIMODAL:-0}" = "1" ]; then
+    ROLLOUT+=( '+actor_rollout_ref.rollout.engine_kwargs.vllm.hf_overrides={text_config:{use_bidirectional_attention:null}}' )
+fi
 
 TRAINER=(
     trainer.critic_warmup=0

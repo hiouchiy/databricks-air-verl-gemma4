@@ -11,11 +11,13 @@ serverless GPU, from your laptop, via the `air` CLI.
 - **Multimodal (image), single node**: geo3k image data, verl `main` (Gemma4 vision processor). See §6 of setup.md.
 - **Multimodal (image), multi-node** (2 nodes = 16×H100): image data + Ray cluster.
 
-> Multimodal note: image runs need verl `main` (not any release — 0.8.0 lacks the
-> Gemma4 image processor), enabled at launch via `MULTIMODAL=1`, plus memory tuning.
-> The image pipeline runs end-to-end, but the geo3k reward returned 0 (the reward fn
-> doesn't parse Gemma4's answer format) — pipeline works; real training needs reward
-> tuning. Details in setup.md §6.
+> Multimodal note: image runs need (1) verl `main` (no release — incl. 0.8.0 — has
+> the Gemma4 image processor yet), (2) a vLLM Gemma4 vision-bug workaround
+> (`hf_overrides` nulls `use_bidirectional_attention`; vLLM 0.24 otherwise emits
+> garbage for images — issue #41403, fixed in vLLM ≥0.25), and (3) memory tuning.
+> All three are auto-applied via `MULTIMODAL=1`. With the workaround, image GRPO
+> gets real rewards (single-node mean≈0.24/max 1.0, multi-node mean 0.06–0.39/max 1.0;
+> nonzero grad_norm ⇒ the policy actually updates). Details in setup.md §6.
 
 > **Full step-by-step build/run instructions are in [setup.md](setup.md)**
 > (Japanese). It builds everything from scratch and is the primary document. This
