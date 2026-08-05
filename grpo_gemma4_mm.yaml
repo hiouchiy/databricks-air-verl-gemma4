@@ -33,7 +33,6 @@ code_source:
     root_path: .
     include_paths:
       - run_grpo.sh
-      - smoke_test.py
 
 env_variables:
   HF_HOME: /tmp/hf
@@ -41,9 +40,9 @@ env_variables:
   NCCL_DEBUG: WARN
   VLLM_LOGGING_LEVEL: WARN
   RAY_TEMP_DIR: /tmp/ray
-  # Disable vLLM's custom all-reduce kernel (falls back to stable NCCL all-reduce).
-  # vLLM's custom peer-to-peer all-reduce can fail to init / hang on Gemma4 MoE + H100.
-  VLLM_DISABLE_CUSTOM_ALL_REDUCE: "1"
+  # NOTE: custom all-reduce is disabled as a vLLM ENGINE ARG in run_grpo.sh
+  # (rollout.engine_kwargs.vllm.disable_custom_all_reduce=True), NOT via an env var —
+  # VLLM_DISABLE_CUSTOM_ALL_REDUCE does not exist in vLLM 0.24 and would be ignored.
   OPENSSL_FORCE_FIPS_MODE: "0"
   OPENSSL_FIPS: "0"
   # MULTIMODAL: install verl main (Gemma4 vision processor) at launch; use the

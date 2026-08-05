@@ -245,6 +245,12 @@ ROLLOUT=(
     # error message's "rollout.update_weights_bucket_megabytes" hint is wrong for
     # 0.7.1 — that path raises "unexpected keyword argument"). Raise to 6144 MB.
     actor_rollout_ref.rollout.checkpoint_engine.update_weights_bucket_megabytes=6144
+    # Disable vLLM's custom (peer-to-peer) all-reduce kernel — see run_grpo.sh for the
+    # full rationale. On Gemma4 MoE + H100 with CUDA-graph capture the custom all-reduce
+    # crashes ("Cuda error custom_all_reduce.cuh:455 'invalid argument'"). This is a vLLM
+    # ENGINE ARG (EngineArgs.disable_custom_all_reduce), NOT the (non-existent)
+    # VLLM_DISABLE_CUSTOM_ALL_REDUCE env. verl forwards rollout.engine_kwargs.vllm.* to vLLM.
+    '+actor_rollout_ref.rollout.engine_kwargs.vllm.disable_custom_all_reduce=True'
 )
 # MULTIMODAL vLLM fix (see run_grpo.sh): null out use_bidirectional_attention via
 # hf_overrides to avoid vLLM 0.24's Gemma4 vision garbage-output bug (issue #41403).
@@ -327,6 +333,22 @@ if [ "${NNODES}" -gt 1 ]; then
     done
 fi
 
+# Clean shutdown for the HEAD node. Installed only here (after the worker branch
+# has already `exit 0`ed above), so it applies to the rank-0 head. It MUST be a
+# `trap ... EXIT`, not inline after the launch: `set -e` + pipefail means a verl
+# FAILURE in the `... | tee` pipeline exits IMMEDIATELY, skipping post-launch lines.
+# Stopping the head's Ray makes the worker's head-poll see the GCS port disappear
+# and exit cleanly (otherwise the worker lingers and the whole job stays RUNNING and
+# keeps billing). --force reaps SIGKILLed DataLoader/Ray workers. Fires on BOTH
+# success and failure; re-exits with verl's status.
+cleanup() {
+  rc=$?
+  echo "[head] training finished (rc=${rc}); stopping Ray"
+  ray stop --force 2>/dev/null || true
+  exit ${rc}
+}
+trap cleanup EXIT
+
 # Launch verl on the head (single-node: runs directly; multi-node: on rank 0).
 python3 -m verl.trainer.main_ppo \
     "${DATA[@]}" \
@@ -336,12 +358,5 @@ python3 -m verl.trainer.main_ppo \
     "${ROLLOUT[@]}" \
     "${TRAINER[@]}" \
     "$@" 2>&1 | tee logs/grpo-gemma4-26b-a4b-${start_time}.log
-RC=${PIPESTATUS[0]}
-
-# Multi-node: after training, stop the head's Ray so the worker's head-poll sees
-# it disappear and exits cleanly (otherwise the worker lingers and the whole job
-# stays RUNNING). --force also reaps SIGKILLed DataLoader/Ray workers that would
-# otherwise keep the job RUNNING (see setup.md §P0-2). Then exit with rc.
-echo "[head] training finished (rc=${RC}); stopping Ray"
-ray stop --force 2>/dev/null || true
-exit ${RC}
+# On success, fall through to the EXIT trap (rc=0). On failure, `set -e` jumps
+# straight to the EXIT trap with verl's non-zero code.

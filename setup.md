@@ -455,8 +455,15 @@ air run --file grpo_gemma4_mm_multinode.yaml -p PROF --watch
 - **actor→vLLM の重み同期バケット**を拡大: `rollout.checkpoint_engine.update_weights_bucket_megabytes=6144`
   （Gemma4 の埋め込みが大きいため。`run_grpo.sh` に設定済み）。
 - **マルチノードは Ray クラスタの明示起動が必要**（§5。`run_grpo_multinode.sh` に実装済み）。
-- **vLLM のカスタム all-reduce を無効化**する。Gemma4 MoE + H100 構成では、vLLM のカスタム
-  （ピアツーピア）all-reduce カーネルが初期化に失敗またはハングすることがあるため、
-  `grpo_gemma4*.yaml` の `env_variables` に `VLLM_DISABLE_CUSTOM_ALL_REDUCE=1` を設定し、
-  安定した NCCL all-reduce にフォールバックさせています。カスタム all-reduce が正常動作する
-  環境では無害な設定です。
+- **vLLM のカスタム all-reduce を無効化**する。Gemma4 MoE + H100 構成では、CUDA グラフ捕捉
+  （`enforce_eager=False`）時に vLLM のカスタム（ピアツーピア）all-reduce カーネルが
+  `Cuda error custom_all_reduce.cuh:455 'invalid argument'` でクラッシュし、EngineCore の
+  初期化が失敗します（同一イメージで Qwen3.5 は踏まない Gemma4 固有事象）。安定した NCCL
+  all-reduce にフォールバックさせるため、`run_grpo.sh` / `run_grpo_multinode.sh` の rollout に
+  **vLLM のエンジン引数**として
+  `+actor_rollout_ref.rollout.engine_kwargs.vllm.disable_custom_all_reduce=True`
+  を渡しています（verl が `rollout.engine_kwargs.vllm.*` を vLLM に転送する経路。マルチモーダルの
+  `hf_overrides` と同じ仕組み）。
+  **注意**: これは vLLM の**エンジン引数**であり、環境変数ではありません。`VLLM_DISABLE_CUSTOM_ALL_REDUCE`
+  という環境変数は vLLM 0.24 に存在せず（指定しても `Unknown vLLM environment variable` の警告が
+  出て無視される）、効果がありません。

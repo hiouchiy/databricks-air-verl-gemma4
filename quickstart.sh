@@ -108,9 +108,11 @@ say "§3: イメージを AI Runtime に登録"
 air register image "${IMAGE_SHORT}" -p "${PROFILE}"
 
 # ---- 完了 -------------------------------------------------------------------
+# NOTE: plain heredoc (no \033 ANSI codes) — inside cat <<EOF they would print
+# literally. Use the say() helper above if you want colored output.
 cat <<EOF
 
-\033[1;32m==================== 環境構築が完了しました ====================\033[0m
+==================== 環境構築が完了しました ====================
 次のステップ（手動で実行）:
 
   # 疎通確認（任意・安価）

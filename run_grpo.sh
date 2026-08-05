@@ -266,6 +266,16 @@ ROLLOUT=(
     # CheckpointEngineConfig, i.e. under rollout.checkpoint_engine. Raise to 6144 MB
     # (same safe value proven on the Qwen3.5 stack; adjust if the bucket error persists).
     actor_rollout_ref.rollout.checkpoint_engine.update_weights_bucket_megabytes=6144
+    # Disable vLLM's custom (peer-to-peer) all-reduce kernel. On Gemma4 MoE + H100
+    # with CUDA-graph capture (enforce_eager=False), the custom all-reduce crashes
+    # during graph capture: "Cuda error custom_all_reduce.cuh:455 'invalid argument'"
+    # → EngineCore init fails and the run dies. Falling back to NCCL all-reduce is
+    # stable (Qwen3.5 on the same image never hits this). This is a vLLM ENGINE ARG
+    # (EngineArgs.disable_custom_all_reduce), NOT an env var — the earlier
+    # VLLM_DISABLE_CUSTOM_ALL_REDUCE env does not exist in vLLM 0.24 and was ignored.
+    # verl forwards rollout.engine_kwargs.vllm.* into vLLM (**engine_kwargs), the same
+    # path used by the multimodal hf_overrides below.
+    '+actor_rollout_ref.rollout.engine_kwargs.vllm.disable_custom_all_reduce=True'
 )
 # MULTIMODAL vLLM fix: vLLM 0.24's Gemma4 vision path emits garbage (word salad) for
 # image inputs due to a use_bidirectional_attention / use_mm_prefix regression
@@ -299,6 +309,26 @@ if [ "${TOTAL_TRAIN_STEPS}" != "0" ]; then
     TRAINER+=( trainer.total_training_steps=${TOTAL_TRAIN_STEPS} )
 fi
 
+# --- Clean shutdown so the AI Runtime job actually terminates (avoids billing) --
+# Even after training finishes, the job can stay RUNNING because a Ray/DataLoader
+# worker gets SIGKILLed at teardown and the Ray runtime never fully exits (observed
+# on both success and failure → up to timeout_minutes of 8xH100 billed). So we stop
+# Ray explicitly on exit.
+#
+# This MUST be a `trap ... EXIT`, not inline after the launch: `set -e` + pipefail
+# means a verl FAILURE in the `... | tee` pipeline exits the script IMMEDIATELY,
+# before any post-launch line. Gemma4 GRPO failing is exactly when cleanup matters
+# most (a failed job otherwise lingers RUNNING and keeps billing 8xH100), so cleanup
+# has to run on the failure path too. The trap fires on BOTH paths; `$?` at trap
+# entry is verl's status (via pipefail) and re-exiting with it marks the run terminal.
+cleanup() {
+  rc=$?
+  ray stop --force 2>/dev/null || true
+  echo "[run_grpo] verl exit code=${rc}; ray stopped; exiting."
+  exit ${rc}
+}
+trap cleanup EXIT
+
 python3 -m verl.trainer.main_ppo \
     "${DATA[@]}" \
     "${MODEL[@]}" \
@@ -307,13 +337,5 @@ python3 -m verl.trainer.main_ppo \
     "${ROLLOUT[@]}" \
     "${TRAINER[@]}" \
     "$@" 2>&1 | tee logs/grpo-gemma4-26b-a4b-${start_time}.log
-RC=${PIPESTATUS[0]}   # verl's exit code (NOT tee's)
-
-# --- Clean shutdown so the AI Runtime job actually terminates (avoids billing) --
-# Even after training finishes, the job can stay RUNNING because a Ray/DataLoader
-# worker gets SIGKILLed at teardown and the Ray runtime never fully exits (observed
-# on both success and failure → up to timeout_minutes of 8xH100 billed). Stop Ray
-# explicitly and exit with verl's return code so the run terminates.
-ray stop --force 2>/dev/null || true
-echo "[run_grpo] verl exit code=${RC}; ray stopped; exiting."
-exit ${RC}
+# On success, fall through to the EXIT trap (rc=0). On failure, `set -e` jumps
+# straight to the EXIT trap with verl's non-zero code.
