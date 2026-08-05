@@ -76,9 +76,9 @@ RUN for i in $(seq 1 8); do \
 RUN for i in $(seq 1 8); do \
       uv pip install ${FIND_LINKS} --index-url ${PIP_INDEX_URL} \
         "torch==2.11.0" \
-        "transformers>=5.5.3" "accelerate>=0.34" "datasets>=3.0" \
+        "transformers>=5.5.3,<6" "accelerate>=0.34,<2" "datasets>=3.0,<6" \
         "hydra-core" "omegaconf" "einops" "ninja" "codetiming" "dill" "peft" \
-        "pylatexenc" "torchdata" "ray[default]>=2.41.0" "wandb" "tensorboard" \
+        "pylatexenc" "torchdata" "ray[default]>=2.41.0,<3" "wandb" "tensorboard" \
         "tensordict>=0.8.0,<=0.10.0,!=0.9.0" "pyarrow>=19.0.0" "mlflow>=3.6,<=3.15.0" \
         "qwen-vl-utils" "mathruler" && break || \
       { echo "deps attempt $i disconnected; resuming from cache"; sleep 10; }; \
