@@ -41,13 +41,16 @@ env_variables:
   NCCL_DEBUG: WARN
   VLLM_LOGGING_LEVEL: WARN
   RAY_TEMP_DIR: /tmp/ray
+  # Disable vLLM's custom all-reduce kernel (falls back to stable NCCL all-reduce).
+  # vLLM's custom peer-to-peer all-reduce can fail to init / hang on Gemma4 MoE + H100.
+  VLLM_DISABLE_CUSTOM_ALL_REDUCE: "1"
   OPENSSL_FORCE_FIPS_MODE: "0"
   OPENSSL_FIPS: "0"
   # MULTIMODAL: verl main (Gemma4 vision processor) installed on every node at
   # launch by run_grpo_multinode.sh; use the image column.
   MULTIMODAL: "1"
   IMAGE_KEY: images
-  # Memory settings (same proven set as single-node multimodal; see STATUS.md).
+  # Memory settings (same proven set as single-node multimodal).
   ROLLOUT_GPU_MEM_UTIL: "0.5"
   ENFORCE_EAGER: "True"
   ACT_OFFLOAD: "True"

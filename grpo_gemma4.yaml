@@ -2,7 +2,7 @@
 # PRIMARY sample: verl GRPO + FSDP2 for Gemma4-26B-A4B (MoE), single node 8x H100,
 # using the CUSTOM AI Runtime image built in this repo (FROM databricksruntime/air:
 # dcs-base-aws-devel-cu13 + verl + vllm 0.24 + transformers >=5.5.3). See
-# Dockerfile / STATUS.md.
+# Dockerfile.
 #
 # Prereqs:
 #   1) Build + push the image (see Dockerfile header / README).
@@ -49,6 +49,10 @@ env_variables:
   NCCL_DEBUG: WARN
   VLLM_LOGGING_LEVEL: WARN
   RAY_TEMP_DIR: /tmp/ray
+  # Disable vLLM's custom all-reduce kernel. On this Gemma4 MoE + H100 setup vLLM's
+  # custom (peer-to-peer) all-reduce can fail to initialize / hang; the flag falls
+  # back to NCCL all-reduce, which is stable here. Harmless when custom AR would work.
+  VLLM_DISABLE_CUSTOM_ALL_REDUCE: "1"
   # opencv-python-headless 5.0.0.93 ships a BUNDLED FIPS libcrypto that aborts on
   # import cv2; the image pins opencv 4.12.0.88 to fix it. These env vars are kept
   # as harmless defensive defaults.

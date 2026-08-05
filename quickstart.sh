@@ -73,16 +73,19 @@ databricks volumes create "${CATALOG}" "${SCHEMA}" "${VOLUME_NAME}" MANAGED -p "
 
 # ---- 2. テンプレート置換 ----------------------------------------------------
 # テンプレートには __IMAGE__ / __VOL__ / __WS_EMAIL__ のプレースホルダが入って
-# います。作業用に .gen ファイルを生成して置換します（元テンプレは保持）。
-say "テンプレートを環境向けに置換 (*.gen を生成)"
-TEMPLATES="grpo_gemma4.yaml grpo_gemma4_multinode.yaml smoke_test.yaml prep_gsm8k_deps.yaml run_grpo.sh run_grpo_multinode.sh"
+# います。置換結果を gen/ サブディレクトリに *元の拡張子のまま* 出力します
+# （air CLI は .yaml/.yml しか受け付けないため、`*.yaml.gen` にはできない）。元テンプレは保持。
+# マルチモーダル(§6)用の grpo_gemma4_mm*.yaml も含める。
+say "テンプレートを環境向けに置換 (gen/ に生成)"
+mkdir -p gen
+TEMPLATES="grpo_gemma4.yaml grpo_gemma4_multinode.yaml grpo_gemma4_mm.yaml grpo_gemma4_mm_multinode.yaml smoke_test.yaml prep_gsm8k_deps.yaml prep_geo3k_deps.yaml run_grpo.sh run_grpo_multinode.sh"
 for t in ${TEMPLATES}; do
   [ -f "$t" ] || continue
   sed -e "s#__IMAGE__#${IMAGE_SHORT}#g" \
       -e "s#__VOL__#${VOL}#g" \
       -e "s#__WS_EMAIL__#${WS_EMAIL}#g" \
-      "$t" > "${t}.gen"
-  echo "  生成: ${t}.gen"
+      "$t" > "gen/${t}"
+  echo "  生成: gen/${t}"
 done
 
 # ---- 3. カスタムイメージをビルド → push → 登録（1回で完結） ----------------
@@ -111,16 +114,16 @@ cat <<EOF
 次のステップ（手動で実行）:
 
   # 疎通確認（任意・安価）
-  air run --file smoke_test.yaml.gen -p ${PROFILE} --watch
+  air run --file gen/smoke_test.yaml -p ${PROFILE} --watch
 
   # 動作確認用データ（gsm8k, テキスト）の準備
-  air run --file prep_gsm8k_deps.yaml.gen -p ${PROFILE} --watch
+  air run --file gen/prep_gsm8k_deps.yaml -p ${PROFILE} --watch
 
   # 単一ノード（8×H100）で GRPO
-  air run --file grpo_gemma4.yaml.gen -p ${PROFILE} --watch
+  air run --file gen/grpo_gemma4.yaml -p ${PROFILE} --watch
 
   # マルチノード（2ノード=16×H100）で GRPO
-  air run --file grpo_gemma4_multinode.yaml.gen -p ${PROFILE} --watch
+  air run --file gen/grpo_gemma4_multinode.yaml -p ${PROFILE} --watch
 
 詳細は setup.md を参照してください。
 EOF

@@ -1,0 +1,55 @@
+# =============================================================================
+# Prepare a TINY geo3k dataset on 1x A10 using the base env (no custom image
+# needed — only datasets/pyarrow). Writes verl-format parquet to a UC Volume.
+# This is a "does it run" smoke: 64 train / 8 test samples only.
+#
+#   air run --file prep_geo3k_deps.yaml -p <PROFILE> --watch
+# =============================================================================
+
+experiment_name: prep-geo3k-deps
+mlflow_experiment_directory: /Workspace/Users/__WS_EMAIL__/prep-geo3k-deps
+
+compute:
+  num_accelerators: 1
+  accelerator_type: GPU_1xA10
+
+environment:
+  version: 'databricks_ai_v5'
+  dependencies:
+    - datasets>=3.0
+    - pyarrow>=19.0.0
+
+env_variables:
+  HF_HOME: /tmp/hf
+  GEO3K_OUT_DIR: __VOL__/geo3k
+
+max_retries: 0
+timeout_minutes: 40
+
+# geo3k prep embedded inline (deps path uploads no code snapshot). Tiny sample.
+command: |
+  python3 - <<'PYEOF'
+  import os
+  import datasets
+  OUT = os.environ.get("GEO3K_OUT_DIR", "__VOL__/geo3k")
+  MAXN = 64
+  INSTR = (r"You FIRST think about the reasoning process as an internal monologue and then "
+           r"provide the final answer. The reasoning process MUST BE enclosed within "
+           r"<think> </think> tags. The final answer MUST BE put in \boxed{}.")
+  DS = "hiyouga/geometry3k"
+  def mk(split):
+      def fn(ex, idx):
+          problem = ex.pop("problem"); answer = ex.pop("answer"); images = ex.pop("images")
+          return {"data_source": DS, "prompt": [{"role":"user","content": problem+" "+INSTR}],
+                  "images": images, "ability":"math",
+                  "reward_model": {"style":"rule","ground_truth": answer},
+                  "extra_info": {"split": split, "index": idx, "answer": answer, "question": problem}}
+      return fn
+  d = datasets.load_dataset(DS)
+  tr = d["train"].select(range(min(MAXN, len(d["train"])))).map(mk("train"), with_indices=True)
+  te = d["test"].select(range(min(8, len(d["test"])))).map(mk("test"), with_indices=True)
+  os.makedirs(OUT, exist_ok=True)
+  tr.to_parquet(os.path.join(OUT, "train.parquet"))
+  te.to_parquet(os.path.join(OUT, "test.parquet"))
+  print(f"Wrote {len(tr)} train / {len(te)} test to {OUT}")
+  PYEOF

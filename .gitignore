@@ -10,3 +10,7 @@ __pycache__/
 
 # Internal work log (contains internal chronology; not for public repo)
 STATUS.md
+
+# Internal benchmarking artifacts — not part of the customer deliverable
+bench_*.yaml
+run_grpo_bench.sh

@@ -108,7 +108,7 @@ PY
 MODEL_PATH=${MODEL_PATH:-$( [ -n "$HP" ] && getp model_name || echo "google/gemma-4-26B-A4B-it" )}
 MODEL_PATH=${MODEL_PATH:-google/gemma-4-26B-A4B-it}
 # Default dataset is TEXT-ONLY gsm8k (verl 0.7.1 can't build Gemma4 image messages;
-# see run_grpo.sh / STATUS.md). Point at geo3k + set IMAGE_KEY=images for the image
+# see run_grpo.sh). Point at geo3k + set IMAGE_KEY=images for the image
 # path once verl supports the Gemma4 vision processor.
 TRAIN_FILE=${TRAIN_FILE:-$( [ -n "$HP" ] && getp train_files || echo "__VOL__/gsm8k/train.parquet" )}
 TRAIN_FILE=${TRAIN_FILE:-__VOL__/gsm8k/train.parquet}
@@ -174,11 +174,11 @@ MODEL=(
     actor_rollout_ref.nccl_timeout=${NCCL_TIMEOUT:-3600}
     # Gemma4 requires SDPA, NOT FA2: global_head_dim=512 (head_dim=256) exceeds FA2's
     # "head dimension at most 256" kernel limit. use_remove_padding needs the flash-attn
-    # varlen path, so it must be False under SDPA. (See run_grpo.sh / STATUS.md.)
+    # varlen path, so it must be False under SDPA. (See run_grpo.sh.)
     actor_rollout_ref.model.use_remove_padding=${REMOVE_PADDING:-False}
     actor_rollout_ref.model.enable_gradient_checkpointing=True
     # Activation offload (CPU) to cut actor-update peak memory — the multimodal YAML
-    # turns this ON (image path OOM'd at actor update on single node; see STATUS.md).
+    # turns this ON (image path OOM'd at actor update on single node).
     actor_rollout_ref.model.enable_activation_offload=${ACT_OFFLOAD:-False}
 )
 if [ "${ATTN:-sdpa}" = "sdpa" ]; then
@@ -340,9 +340,8 @@ RC=${PIPESTATUS[0]}
 
 # Multi-node: after training, stop the head's Ray so the worker's head-poll sees
 # it disappear and exits cleanly (otherwise the worker lingers and the whole job
-# stays RUNNING). Then exit with the trainer's return code.
-if [ "${NNODES}" -gt 1 ]; then
-    echo "[head] training finished (rc=${RC}); stopping Ray head"
-    ray stop 2>/dev/null || true
-fi
+# stays RUNNING). --force also reaps SIGKILLed DataLoader/Ray workers that would
+# otherwise keep the job RUNNING (see setup.md §P0-2). Then exit with rc.
+echo "[head] training finished (rc=${RC}); stopping Ray"
+ray stop --force 2>/dev/null || true
 exit ${RC}

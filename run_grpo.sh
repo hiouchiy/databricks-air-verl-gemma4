@@ -73,7 +73,7 @@ python3 -c "import qwen_vl_utils, mathruler; print('qwen_vl_utils + mathruler OK
 # different-sized tensors into the same NCCL broadcast → deterministic deadlock
 # (observed: SeqNum=1050 BROADCAST NumelIn=256 hangs in ref_policy init_model).
 # verl main fixes this by sorting: sorted(model.named_buffers(), key=lambda x: x[0]).
-# Apply that fix in-place to the installed verl (idempotent). See STATUS.md.
+# Apply that fix in-place to the installed verl (idempotent).
 python3 - <<'PYPATCH'
 import re, pathlib
 try:
@@ -307,3 +307,13 @@ python3 -m verl.trainer.main_ppo \
     "${ROLLOUT[@]}" \
     "${TRAINER[@]}" \
     "$@" 2>&1 | tee logs/grpo-gemma4-26b-a4b-${start_time}.log
+RC=${PIPESTATUS[0]}   # verl's exit code (NOT tee's)
+
+# --- Clean shutdown so the AI Runtime job actually terminates (avoids billing) --
+# Even after training finishes, the job can stay RUNNING because a Ray/DataLoader
+# worker gets SIGKILLed at teardown and the Ray runtime never fully exits (observed
+# on both success and failure → up to timeout_minutes of 8xH100 billed). Stop Ray
+# explicitly and exit with verl's return code so the run terminates.
+ray stop --force 2>/dev/null || true
+echo "[run_grpo] verl exit code=${RC}; ray stopped; exiting."
+exit ${RC}

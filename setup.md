@@ -49,9 +49,14 @@ Gemma4-26B-A4B は **MoE（128エキスパート中8アクティブ、共有な�
 - **AI Runtime（サーバーレス GPU）が有効なワークスペース**。
   現時点で AI Runtime は **AWS / Azure の US リージョン**でのみ提供。
 - アクセラレータタイプ **`GPU_8xH100`** が利用可能であること。
+- **`GPU_8xH100` のワークスペース・クォータに空きがあること**。ワークスペース単位でノード数の
+  クォータ（例: 4ノード）があり、超過するとジョブは数秒で `Workspace has exceeded its GPU quota`
+  で FAILED します。**単一ノード検証は1ノード以上、マルチノード（§5, 16 GPU = 2ノード）は2ノード
+  以上の空き**が必要です。稼働中ジョブは `air list runs` で確認できます。ジョブを `air cancel` した
+  直後はノード解放に時間がかかるため、すぐの再投入はクォータ超過で弾かれることがあります。
 - 学習データとチェックポイントを置く **Unity Catalog Volume** を作成できる権限。
 - Docker イメージを登録するための **Docker Hub アカウント**（AI Runtime のカスタムイメージは
-  Docker Hub のみ対応、イメージサイズは 20GB 未満という制約がある）。
+  Docker Hub のみ対応。イメージは目安として ~20GB、本構成の実測は約 20.1GB で登録は成功します）。
 
 ### 0-3. なぜ「カスタム Docker イメージ」方式なのか（重要）
 本構成では、学習に必要なライブラリ一式を **1 個のカスタム Docker イメージに固めます**。
@@ -93,11 +98,13 @@ bash quickstart.sh
 対話で `PROFILE / Docker Hub ユーザー名 / イメージタグ / カタログ / スキーマ / Volume名 /
 メールアドレス / pip インデックス` を入力すると、以下を順に実行します:
 1. UC Volume 作成
-2. テンプレート（`*.yaml` / `*.sh`）の置換 → `*.gen` を生成
+2. テンプレート（`*.yaml` / `*.sh`）の置換 → `gen/` に生成（元の拡張子を保持）
 3. カスタムイメージをビルド（1回）→ push → 登録
 
-完了後、`prep_gsm8k_deps.yaml.gen` でデータを用意し、`grpo_gemma4.yaml.gen` /
-`grpo_gemma4_multinode.yaml.gen` を `air run` すれば学習できます（§4・§5）。
+完了後、`gen/prep_gsm8k_deps.yaml` でデータを用意し、`gen/grpo_gemma4.yaml` /
+`gen/grpo_gemma4_multinode.yaml` を `air run` すれば学習できます（§4・§5）。
+（`air` CLI は `.yaml`/`.yml` のみ受け付けるため、置換結果は `*.yaml.gen` ではなく
+`gen/` サブディレクトリに元の拡張子で出力します。）
 
 > 学習の実行（§4・§5）とデータ準備は quickstart には含めていません（パラメータを変えて
 > 何度も回すものなので手動運用が適切）。イメージの push/登録に数十分かかります。
@@ -122,6 +129,9 @@ databricks auth login --host https://<ワークスペースURL> --profile PROF
 databricks current-user me -p PROF     # 疎通確認
 ```
 > 以降のコマンド例の `PROF` は自分のプロファイル名に置き換えてください。
+> **長時間の作業中に認証が切れることがあります**。`stored credentials from older CLI versions
+> are no longer used` 等のエラーや、`air` コマンドが認証エラーで失敗する場合は、上記
+> `databricks auth login` を再実行してください（ブラウザ認証を再度求められます）。
 
 ### 1-3. Docker Hub へログイン
 ```bash
@@ -213,8 +223,9 @@ air register image <DOCKERHUB_USER>/verl-gemma4:v1 -p PROF
 - Docker の `build` で `-v`（ビルド時マウント）が使えない場合は、`wheelhouse/` を `COPY` するか
   `RUN --mount=type=bind,source=wheelhouse,target=/wheelhouse` に切り替えてください。
 
-> **イメージサイズに注意**: 20GB 未満に収める必要があります（AI Runtime の登録制約）。
-> Dockerfile には `UV_NO_CACHE=1` を設定済みです。
+> **イメージサイズの目安**: 目安として ~20GB を意識してください（本構成の実測は約 20.1GB で
+> 登録は成功しています）。Dockerfile には `UV_NO_CACHE=1` を設定済みです。登録がタイムアウトする
+> 場合はサイズを確認してください。
 
 **ここまでで学習可能な状態です。**
 
@@ -252,6 +263,16 @@ air run --file grpo_gemma4.yaml -p PROF --watch
 - `prep_gsm8k_deps.yaml` の `MAXN` を増やす／実データに差し替え
 - `grpo_gemma4.yaml` の `parameters.total_training_steps` を増やす／エポック学習へ
 - `run_grpo.sh` の `train_batch_size` / `max_response_length` を本番規模へ
+
+> **ジョブ終了と課金の注意（重要）**: `run_grpo.sh` は学習完了後に `ray stop --force` と明示 `exit`
+> を行い、ジョブが自動終了するようにしています（SIGKILL された DataLoader/Ray ワーカーが残って
+> ジョブが `RUNNING` のまま課金が続くのを防ぐため）。それでも `--watch` を Ctrl-C で切った場合や
+> 異常時にジョブが残ることがあります。**課金は GPU ノードの稼働時間に対して発生する**ため、
+> 不要になったジョブは必ず停止してください:
+> ```bash
+> air list runs -p PROF              # RUNNING のジョブを確認
+> air cancel <RUN_ID> -p PROF        # 不要なジョブを停止
+> ```
 
 ---
 
@@ -318,7 +339,12 @@ air run --file grpo_gemma4_multinode.yaml -p PROF --watch
    バッチ削減等が必要（下記 6-3）。
 
 ### 6-2. 実行（単ノード / マルチノード）
-画像入りデータ（verl の geo3k 形式、`images` 列を持つ parquet）を Volume に用意した上で:
+まず画像入りデータ（verl の geo3k 形式、`images` 列を持つ parquet）を用意します。本リポの
+`prep_geo3k_deps.yaml` で小さな geo3k（64 train / 8 test）を Volume に作れます:
+```bash
+air run --file prep_geo3k_deps.yaml -p PROF --watch   # → $VOL/geo3k/{train,test}.parquet
+```
+その上で GRPO を実行します:
 ```bash
 # 単ノード（8×H100）
 air run --file grpo_gemma4_mm.yaml -p PROF --watch
@@ -429,3 +455,8 @@ air run --file grpo_gemma4_mm_multinode.yaml -p PROF --watch
 - **actor→vLLM の重み同期バケット**を拡大: `rollout.checkpoint_engine.update_weights_bucket_megabytes=6144`
   （Gemma4 の埋め込みが大きいため。`run_grpo.sh` に設定済み）。
 - **マルチノードは Ray クラスタの明示起動が必要**（§5。`run_grpo_multinode.sh` に実装済み）。
+- **vLLM のカスタム all-reduce を無効化**する。Gemma4 MoE + H100 構成では、vLLM のカスタム
+  （ピアツーピア）all-reduce カーネルが初期化に失敗またはハングすることがあるため、
+  `grpo_gemma4*.yaml` の `env_variables` に `VLLM_DISABLE_CUSTOM_ALL_REDUCE=1` を設定し、
+  安定した NCCL all-reduce にフォールバックさせています。カスタム all-reduce が正常動作する
+  環境では無害な設定です。

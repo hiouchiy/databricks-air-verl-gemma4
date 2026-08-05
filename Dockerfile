@@ -51,9 +51,9 @@ ENV UV_CONCURRENT_DOWNLOADS=1
 # /wheelhouse means no re-download cost anyway. This keeps the image ~20GB.
 ENV UV_NO_CACHE=1
 
-# Offline wheelhouse (full binary closure, ~4.3GB) fetched on a Databricks node
-# into a UC Volume and copied to ./wheelhouse (see STATUS.md / build_wheelhouse.yaml).
-# We BIND-MOUNT it per-RUN (not COPY) so the 4.3GB never lands in an image layer
+# Optional offline wheelhouse: place any pre-fetched wheels in ./wheelhouse to
+# install without network (leave it empty to fetch everything from PIP_INDEX_URL).
+# We BIND-MOUNT it per-RUN (not COPY) so its contents never land in an image layer
 # — COPYing it caused "no space left on device" at layer-commit. Each install RUN
 # gets it at /wheelhouse via --mount and uses --find-links (index still used as a
 # fallback for the causal_conv1d/flash-attn sdists that compile at build time).
@@ -79,7 +79,7 @@ RUN for i in $(seq 1 8); do \
         "transformers>=5.5.3" "accelerate>=0.34" "datasets>=3.0" \
         "hydra-core" "omegaconf" "einops" "ninja" "codetiming" "dill" "peft" \
         "pylatexenc" "torchdata" "ray[default]>=2.41.0" "wandb" "tensorboard" \
-        "tensordict>=0.8.0,<=0.10.0,!=0.9.0" "pyarrow>=19.0.0" "mlflow>=3.6" \
+        "tensordict>=0.8.0,<=0.10.0,!=0.9.0" "pyarrow>=19.0.0" "mlflow>=3.6,<=3.15.0" \
         "qwen-vl-utils" "mathruler" && break || \
       { echo "deps attempt $i disconnected; resuming from cache"; sleep 10; }; \
     done

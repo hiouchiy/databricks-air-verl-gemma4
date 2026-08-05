@@ -8,7 +8,7 @@
 # type: Gemma4Processor" for Gemma4, so the geo3k image path can't build messages
 # (rl_dataset _build_messages asserts "processor is needed to process image").
 # gsm8k is text-only, so no multimodal processor is needed — this exercises the
-# Gemma4 MoE + verl + FSDP2 GRPO stack end-to-end. (See STATUS.md.)
+# Gemma4 MoE + verl + FSDP2 GRPO stack end-to-end.
 #
 #   air run --file prep_gsm8k_deps.yaml -p <PROFILE> --watch
 # =============================================================================
