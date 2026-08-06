@@ -216,6 +216,12 @@ air register image <DOCKERHUB_USER>/verl-gemma4:v1 -p PROF
 - **`wheelhouse/` ディレクトリは必ず作成してマウント**してください（空で構いません）。`Dockerfile`
   の各 install 手順は `--find-links /wheelhouse` を使うため、`/wheelhouse` が**存在しないと
   ビルドが即失敗**します（空なら各 wheel は `PIP_INDEX_URL` から取得されます）。
+- **`PIP_INDEX_URL` は任意項目**です。既定の公開 PyPI（`https://pypi.org/simple`）に到達できる環境なら
+  変更不要です。**社内 PyPI プロキシなど独自のインデックスを使う場合のみ**この値を差し替えてください。
+  その際、プロキシが**最新バージョンだけ未同期**だと一部パッケージの取得が `403 Forbidden` になることが
+  あります（例: `databricks-sdk` や `mlflow` の最新版。いずれも推移的依存）。その場合は
+  (a) `PIP_INDEX_URL` を公開 PyPI に戻す、または (b) 直前の版を明示指定して回避してください
+  （これはプロキシ運用側の同期の問題で、本構成のコードやバージョン指定とは無関係です）。
 - torch(≈530MB)・vLLM(≈270MB) 等の大きな wheel を取得するため、**ネットワークの安定した環境**で。
 - `--platform linux/amd64` … AI Runtime ノードは x86_64。arm Mac でも本指定で amd64 イメージに
   なります（エミュレーションで時間がかかる場合あり。可能なら x86_64 Linux 上でのビルドを推奨）。
