@@ -2,14 +2,22 @@
 
 Databricks AI Runtime のサーバーレス GPU 上で、**Gemma4-26B-A4B**（MoE + ハイブリッド注意 +
 マルチモーダルのモデル）を **verl + FSDP2** で **GRPO（強化学習）** するための環境を、
-**ゼロから構築する**ための手順書です。ローカル PC 上のコマンドラインツール（`air` CLI）から
-学習ジョブを投入します。
+**ゼロから構築する**ための手順書です。ローカル PC 上のコマンドラインツール（Databricks CLI の
+`databricks air` コマンド）から学習ジョブを投入します。
+
+> **2026年10月の AI Runtime 更新に対応済み**: (1) AI Runtime CLI は Databricks CLI に統合されました
+> （`databricks air ...`。旧 Python 版 `air` / `databricks-air` パッケージは不要）。(2) カスタムイメージは
+> Docker Hub ではなく **Databricks Artifact Registry（Unity Catalog）** に push し、YAML の
+> `environment.unity_catalog_image: <catalog>.<schema>.<image>:<tag>` で参照します
+> （旧 `environment.docker_image.url` と `air register image` は新 CLI では使えません）。
 
 このガイドは既存の成果物やコンパイル済みファイルの持ち込みを前提としません。すべて
 このガイドの手順の中で、ソースから構築します。
 
 > **実機検証済み**（単一ノード 8×H100 / マルチノード 2ノード 16×H100 の両方で
 > `Training Progress 100% (3/3)` → `Job status: SUCCESS`）。本ガイドの構成はその結果に基づきます。
+> 2026-10-06 に Databricks CLI v1.19.0（`databricks air`）+ Artifact Registry 方式で、単一ノード（テキスト/画像）・
+> 2ノード（テキスト）を再検証済み。
 
 ---
 
@@ -39,9 +47,9 @@ Gemma4-26B-A4B は **MoE（128エキスパート中8アクティブ、共有な�
 - **OS**: macOS または Linux（x86_64 / arm64 どちらでも可）
 - 必要なツール:
   - **Git**（`git clone` でソース一式を取得）
-  - **Databricks CLI**（`databricks`）
-  - **AI Runtime CLI**（`air`）
-  - **Docker**（`docker build` / `docker push` が使えること。Docker Desktop など）
+  - **Databricks CLI v1.19.0 以上**（`databricks`。AI Runtime CLI は `databricks air` として同梱）
+  - **Docker**（`docker build` が使えること。Docker Desktop など。`databricks air images push` は
+    `PATH` 上の `docker` を使います）
   - **Python 3.12**（ローカルでの補助スクリプト用。必須ではない）
 - **GPU はローカルに不要**（学習は Databricks 側の H100 上で実行）。
 
@@ -52,15 +60,19 @@ Gemma4-26B-A4B は **MoE（128エキスパート中8アクティブ、共有な�
 - **`GPU_8xH100` のワークスペース・クォータに空きがあること**。ワークスペース単位でノード数の
   クォータ（例: 4ノード）があり、超過するとジョブは数秒で `Workspace has exceeded its GPU quota`
   で FAILED します。**単一ノード検証は1ノード以上、マルチノード（§5, 16 GPU = 2ノード）は2ノード
-  以上の空き**が必要です。稼働中ジョブは `air list runs` で確認できます。ジョブを `air cancel` した
+  以上の空き**が必要です。稼働中ジョブは `databricks air list` で確認できます。ジョブを `databricks air cancel` した
   直後はノード解放に時間がかかるため、すぐの再投入はクォータ超過で弾かれることがあります。
 - 学習データとチェックポイントを置く **Unity Catalog Volume** を作成できる権限。
-- Docker イメージを登録するための **Docker Hub アカウント**（AI Runtime のカスタムイメージは
-  Docker Hub のみ対応。イメージは目安として ~20GB、本構成の実測は約 20.1GB で登録は成功します）。
+- **Previews の有効化（ワークスペース管理者）**: 「**AI Runtime Beta Features**」と
+  「**Databricks Artifact Registry**」の2つを ON にしておくこと（カスタムイメージの前提）。
+- カスタムイメージを置く **UC スキーマへの権限**（Artifact Registry）:
+  新規 push = `USE CATALOG` / `USE SCHEMA` / `CREATE VOLUME`、同名イメージへのタグ追加 = `WRITE VOLUME`、
+  ジョブでの利用 = `USE CATALOG` / `USE SCHEMA` / `READ VOLUME`。
+  イメージは目安として ~20GB 未満（本構成の実測は約 20.1GB で push・実行とも成功）。
 
 ### 0-3. なぜ「カスタム Docker イメージ」方式なのか（重要）
 本構成では、学習に必要なライブラリ一式を **1 個のカスタム Docker イメージに固めます**。
-`air` の「依存関係をジョブ実行時にインストールする方式（`environment.dependencies`）」では
+AI Runtime の「依存関係をジョブ実行時にインストールする方式（`environment.dependencies`）」では
 **この学習は動きません**。理由:
 
 1. verl の公開 wheel は `numpy<2` かつ `vllm<=0.12` を要求するが、Gemma4 に必要な
@@ -87,23 +99,27 @@ Gemma4-26B-A4B は **MoE（128エキスパート中8アクティブ、共有な�
 ### 0-5. クイックスタート（`quickstart.sh`）
 §1後半〜§3 を自動化したスクリプトです。**事前に** 以下だけ済ませておいてください:
 - ソース一式のクローン（§2）— `quickstart.sh` はクローンしたディレクトリの中で実行します
-- CLI 導入（`git` / `databricks` / `air` / `docker`）
-- `databricks auth login --host <URL> --profile <PROFILE>`（ブラウザ認証）
-- `docker login`（Docker Hub）
+- CLI 導入（`git` / `databricks` v1.19.0 以上 / `docker`）
+- `databricks auth login --host <URL> --profile <PROFILE>`（ブラウザ認証。Artifact Registry への
+  push はこの OAuth プロファイルで認証されるため、`docker login` は不要）
 
 ```bash
 cd verl-gemma4        # git clone したディレクトリ（§2）
 bash quickstart.sh
 ```
-対話で `PROFILE / Docker Hub ユーザー名 / イメージタグ / カタログ / スキーマ / Volume名 /
+対話で `PROFILE / カタログ / スキーマ / イメージタグ / ビルドをスキップするか / Volume名 /
 メールアドレス / pip インデックス` を入力すると、以下を順に実行します:
 1. UC Volume 作成
 2. テンプレート（`*.yaml` / `*.sh`）の置換 → `gen/` に生成（元の拡張子を保持）
-3. カスタムイメージをビルド（1回）→ push → 登録
+3. カスタムイメージをビルド（1回）→ Artifact Registry へ push（`<catalog>.<schema>.verl-gemma4:<tag>`）
+
+> **既に同じイメージが UC 上にある場合**（例: ハンズオンで講師が事前に push 済みのイメージを使う場合）は、
+> 「ビルド/push をスキップしますか？」に `y` と答えると 3. を飛ばし、YAML だけそのイメージ名で生成します
+> （その場合 `docker` は不要。イメージへの `READ VOLUME` 権限は必要）。
 
 完了後、`gen/prep_gsm8k_deps.yaml` でデータを用意し、`gen/grpo_gemma4.yaml` /
-`gen/grpo_gemma4_multinode.yaml` を `air run` すれば学習できます（§4・§5）。
-（`air` CLI は `.yaml`/`.yml` のみ受け付けるため、置換結果は `*.yaml.gen` ではなく
+`gen/grpo_gemma4_multinode.yaml` を `databricks air run` すれば学習できます（§4・§5）。
+（`databricks air` は `.yaml`/`.yml` のみ受け付けるため、置換結果は `*.yaml.gen` ではなく
 `gen/` サブディレクトリに元の拡張子で出力します。）
 
 > 学習の実行（§4・§5）とデータ準備は quickstart には含めていません（パラメータを変えて
@@ -115,13 +131,15 @@ bash quickstart.sh
 
 ### 1-1. CLI のインストール（ローカル PC）
 ```bash
-# Databricks CLI（未導入の場合は公式手順で導入）
-databricks version        # 例: Databricks CLI v0.297.2 以降を推奨
-
-# AI Runtime CLI
-uv tool install --force databricks-air --python 3.12
-air --version             # 例: v1.0.0
+# Databricks CLI（未導入/古い場合は公式手順で導入・更新。例: macOS なら brew upgrade databricks）
+databricks --version          # v1.19.0 以上が必要（air images push は 1.19.0 で追加）
+databricks air --help         # AI Runtime CLI は Databricks CLI に同梱（別途インストール不要）
 ```
+> 旧 Python 版の `air`（`uv tool install databricks-air`）は不要です。新 CLI ではコマンドが
+> `databricks air ...` になり、一部の書式が変わっています（例: `air list runs` → `databricks air list`、
+> `air get run <ID>` → `databricks air get <ID>`）。
+> PATH 上に古い `databricks`（v0.x / v1.1x 未満）が残っていると新コマンドが見つからないので、
+> `which -a databricks` で確認してください。
 
 ### 1-2. ワークスペースへ認証
 ```bash
@@ -130,14 +148,16 @@ databricks current-user me -p PROF     # 疎通確認
 ```
 > 以降のコマンド例の `PROF` は自分のプロファイル名に置き換えてください。
 > **長時間の作業中に認証が切れることがあります**。`stored credentials from older CLI versions
-> are no longer used` 等のエラーや、`air` コマンドが認証エラーで失敗する場合は、上記
+> are no longer used` 等のエラーや、`databricks air` コマンドが認証エラーで失敗する場合は、上記
 > `databricks auth login` を再実行してください（ブラウザ認証を再度求められます）。
 
-### 1-3. Docker Hub へログイン
+### 1-3. Artifact Registry（イメージ置き場）の確認
+カスタムイメージは Unity Catalog のスキーマ配下に `<catalog>.<schema>.verl-gemma4:<tag>` として置きます
+（Docker Hub は使いません）。push は §3 の `databricks air images push` が Docker の認証ヘルパー設定まで
+自動で行います（`docker login` 不要）。レジストリのホスト名は次で確認できます:
 ```bash
-docker login docker.io       # 使用する Docker Hub アカウントで
+databricks auth docker host -p PROF     # 例: Registry host: <workspace-id>.container.<region>.cloud.databricks.com
 ```
-> 以降、イメージ名の `<DOCKERHUB_USER>` は自分の Docker Hub ユーザー名に置き換えます。
 
 ### 1-4. UC Volume の作成（データ・チェックポイント置き場）
 ```bash
@@ -171,17 +191,17 @@ cd verl-gemma4
 | `Dockerfile` | カスタムイメージ定義（CUDA13ベース + 全ライブラリ） |
 | `run_grpo.sh` | 単一ノード GRPO 起動スクリプト（Gemma4 向け設定込み） |
 | `run_grpo_multinode.sh` | 2ノード用 GRPO 起動スクリプト（Ray クラスタ形成込み） |
-| `grpo_gemma4.yaml` | 単一ノード（8×H100）テキストの `air` ジョブ定義 |
-| `grpo_gemma4_multinode.yaml` | 2ノード（16×H100）テキストの `air` ジョブ定義 |
-| `grpo_gemma4_mm.yaml` | 単一ノード **マルチモーダル（画像）** の `air` ジョブ定義（§6） |
-| `grpo_gemma4_mm_multinode.yaml` | 2ノード **マルチモーダル（画像）** の `air` ジョブ定義（§6） |
+| `grpo_gemma4.yaml` | 単一ノード（8×H100）テキストの `databricks air` ジョブ定義 |
+| `grpo_gemma4_multinode.yaml` | 2ノード（16×H100）テキストの `databricks air` ジョブ定義 |
+| `grpo_gemma4_mm.yaml` | 単一ノード **マルチモーダル（画像）** の `databricks air` ジョブ定義（§6） |
+| `grpo_gemma4_mm_multinode.yaml` | 2ノード **マルチモーダル（画像）** の `databricks air` ジョブ定義（§6） |
 | `prep_gsm8k_deps.yaml` | 動作確認用の小さな学習データ（gsm8k, テキスト）を用意するジョブ |
 | `smoke_test.yaml` / `smoke_test.py` | 依存疎通確認（1×A10、安価） |
 
 各ファイルには環境依存の値がプレースホルダで入っています。`quickstart.sh` を使う場合は
 対話入力から自動で置換されます（§0-5）。手動で進める場合は、次の値を自分の環境に合わせて
 置換してください:
-- `__IMAGE__` / `<DOCKERHUB_USER>/verl-gemma4`（学習イメージ名）
+- `__IMAGE__`（学習イメージの UC 名 `<catalog>.<schema>.verl-gemma4:<tag>`。レジストリのホスト名は含めない）
 - `__VOL__` / `$VOL`（UC Volume パス）
 - `__WS_EMAIL__` / `/Workspace/Users/<自分のメール>/...`（MLflow 実験ディレクトリ）
 - 各コマンド例の `PROF`（Databricks CLI プロファイル名）
@@ -201,7 +221,7 @@ Docker イメージ**に固めます。`quickstart.sh` を使えばこの §3 �
   H100 で作る」工程はなく、**イメージ作成は 1回のビルドで完結**します。
   （`Dockerfile` は `BUILD_FLASH_ATTN=0` で FA install をスキップします。）
 
-### 3-2. イメージをビルド → push → 登録
+### 3-2. イメージをビルド → Artifact Registry（UC）へ push
 ```bash
 # クローンしたディレクトリ（§2 の verl-gemma4）の中で実行します
 mkdir -p wheelhouse        # 空でよい（Dockerfile が --find-links /wheelhouse を使うため必須）
@@ -209,10 +229,18 @@ docker build --platform linux/amd64 \
   --build-arg PIP_INDEX_URL=https://pypi.org/simple \
   --build-arg BUILD_FLASH_ATTN=0 \
   -v "$PWD/wheelhouse:/wheelhouse:ro" \
-  -t docker.io/<DOCKERHUB_USER>/verl-gemma4:v1 -f Dockerfile .
-docker push docker.io/<DOCKERHUB_USER>/verl-gemma4:v1
-air register image <DOCKERHUB_USER>/verl-gemma4:v1 -p PROF
+  -t verl-gemma4:v1 -f Dockerfile .
+databricks air images push -p PROF \
+  --source verl-gemma4:v1 \
+  --catalog <catalog> --schema <schema> \
+  --artifact verl-gemma4:v1
 ```
+- push 先は `<catalog>.<schema>.verl-gemma4:v1`。YAML では
+  `environment.unity_catalog_image: <catalog>.<schema>.verl-gemma4:v1` と書きます（`quickstart.sh` が置換）。
+  `unity_catalog_image` は `environment.version` / `environment.dependencies` と同時に指定できません。
+- `databricks air images push` は Docker の認証ヘルパー（`docker-credential-databricks`）を自動設定し、
+  `<catalog>.<schema>.<artifact>:<tag>` へ push します（`docker login` 不要）。イメージ名に使えるのは
+  英小文字・数字・`_`・`-` です。
 - **`wheelhouse/` ディレクトリは必ず作成してマウント**してください（空で構いません）。`Dockerfile`
   の各 install 手順は `--find-links /wheelhouse` を使うため、`/wheelhouse` が**存在しないと
   ビルドが即失敗**します（空なら各 wheel は `PIP_INDEX_URL` から取得されます）。
@@ -225,13 +253,14 @@ air register image <DOCKERHUB_USER>/verl-gemma4:v1 -p PROF
 - torch(≈530MB)・vLLM(≈270MB) 等の大きな wheel を取得するため、**ネットワークの安定した環境**で。
 - `--platform linux/amd64` … AI Runtime ノードは x86_64。arm Mac でも本指定で amd64 イメージに
   なります（エミュレーションで時間がかかる場合あり。可能なら x86_64 Linux 上でのビルドを推奨）。
-- `Image registered: sha256:...` で登録完了。この `:v1` が **学習に使うイメージ**です。
+- push が完了すると UC 上の `<catalog>.<schema>.verl-gemma4:v1` が **学習に使うイメージ**になります
+  （旧方式の `air register image` による登録手順はありません）。
 - Docker の `build` で `-v`（ビルド時マウント）が使えない場合は、`wheelhouse/` を `COPY` するか
   `RUN --mount=type=bind,source=wheelhouse,target=/wheelhouse` に切り替えてください。
 
-> **イメージサイズの目安**: 目安として ~20GB を意識してください（本構成の実測は約 20.1GB で
-> 登録は成功しています）。Dockerfile には `UV_NO_CACHE=1` を設定済みです。登録がタイムアウトする
-> 場合はサイズを確認してください。
+> **イメージサイズの目安**: 目安として ~20GB 未満を意識してください（本構成の実測は約 20.1GB で
+> push・実行とも成功しています）。Dockerfile には `UV_NO_CACHE=1` を設定済みです。
+> push には回線次第で数十分〜1時間以上かかります（約 20GB のアップロード）。
 
 **ここまでで学習可能な状態です。**
 
@@ -241,13 +270,13 @@ air register image <DOCKERHUB_USER>/verl-gemma4:v1 -p PROF
 
 ### 4-1. 疎通確認（1×A10、安価。推奨）
 ```bash
-air run --file smoke_test.yaml -p PROF --watch
+databricks air run --file smoke_test.yaml -p PROF --watch
 ```
 → `SMOKE TEST: PASS`（torch / transformers / vllm / verl / gemma4 認識 が OK）を確認。
 
 ### 4-2. 動作確認用データの準備（gsm8k, テキスト）
 ```bash
-air run --file prep_gsm8k_deps.yaml -p PROF --watch
+databricks air run --file prep_gsm8k_deps.yaml -p PROF --watch
 ```
 → `$VOL/gsm8k/{train,test}.parquet`（64 train / 8 test の少量データ）が作られます。
 本番は実データに差し替えます（データ形式は verl の gsm8k 形式に準拠）。
@@ -259,7 +288,7 @@ air run --file prep_gsm8k_deps.yaml -p PROF --watch
 
 ### 4-3. 単一ノード（8×H100）で GRPO を実行
 ```bash
-air run --file grpo_gemma4.yaml -p PROF --watch
+databricks air run --file grpo_gemma4.yaml -p PROF --watch
 ```
 → `Training Progress: 100% (3/3)` → `Job status: SUCCESS` で学習が回っています
 （既定で SDPA + `use_remove_padding=False`）。実機では step ごとに
@@ -276,8 +305,8 @@ air run --file grpo_gemma4.yaml -p PROF --watch
 > 異常時にジョブが残ることがあります。**課金は GPU ノードの稼働時間に対して発生する**ため、
 > 不要になったジョブは必ず停止してください:
 > ```bash
-> air list runs -p PROF              # RUNNING のジョブを確認
-> air cancel <RUN_ID> -p PROF        # 不要なジョブを停止
+> databricks air list -p PROF                 # 実行中のジョブを確認（終了済みも見るなら --all-status）
+> databricks air cancel <RUN_ID> -p PROF      # 不要なジョブを停止
 > ```
 
 ---
@@ -304,7 +333,7 @@ verl は複数ノードを **Ray クラスタ**で束ねます（torchrun では
 
 ### 5-2. 実行
 ```bash
-air run --file grpo_gemma4_multinode.yaml -p PROF --watch
+databricks air run --file grpo_gemma4_multinode.yaml -p PROF --watch
 ```
 成功時、ログに以下が順に出ます:
 - 2ノードで Ray クラスタが形成される（`nRanks 2 nNodes 2`）
@@ -335,6 +364,8 @@ air run --file grpo_gemma4_multinode.yaml -p PROF --watch
    `processor is needed to process image and video` で失敗します。対応は **`main` ブランチ**のみ
    （PR #4759、リリース未反映）。→ `MULTIMODAL=1` で起動時に verl main を `--no-deps` で入れ替え
    （新依存 `TransferQueue` も導入。transformers 5.14 等は維持）。
+   verl main は日々更新されるため、**実機検証済みのコミット `8718ca30`（verl 0.10.0.dev0, 2026-10-06 検証）に
+   固定**しています。別のコミットを試す場合は環境変数 `VERL_REF` で上書きできます。
 2. **vLLM の Gemma4 vision バグ回避（重要）**。vLLM 0.24 は Gemma4 の画像入力で**出力が文字化け**
    （word salad）し、報酬が 0 になります（テキストは正常。vLLM issue #41403、v0.25+ で修正）。
    イメージ再ビルドを避ける回避策として、rollout の vLLM に **`hf_overrides` で
@@ -348,14 +379,14 @@ air run --file grpo_gemma4_multinode.yaml -p PROF --watch
 まず画像入りデータ（verl の geo3k 形式、`images` 列を持つ parquet）を用意します。本リポの
 `prep_geo3k_deps.yaml` で小さな geo3k（64 train / 8 test）を Volume に作れます:
 ```bash
-air run --file prep_geo3k_deps.yaml -p PROF --watch   # → $VOL/geo3k/{train,test}.parquet
+databricks air run --file prep_geo3k_deps.yaml -p PROF --watch   # → $VOL/geo3k/{train,test}.parquet
 ```
 その上で GRPO を実行します:
 ```bash
 # 単ノード（8×H100）
-air run --file grpo_gemma4_mm.yaml -p PROF --watch
+databricks air run --file grpo_gemma4_mm.yaml -p PROF --watch
 # マルチノード（2ノード = 16×H100）
-air run --file grpo_gemma4_mm_multinode.yaml -p PROF --watch
+databricks air run --file grpo_gemma4_mm_multinode.yaml -p PROF --watch
 ```
 `grpo_gemma4_mm*.yaml` は `MULTIMODAL=1` / `IMAGE_KEY=images` と、下記のメモリ設定を `env_variables`
 で渡します。成功時 `Training Progress 100% (3/3)` → `Job status: SUCCESS`。
@@ -398,8 +429,8 @@ air run --file grpo_gemma4_mm_multinode.yaml -p PROF --watch
 ### 実行基盤（Databricks 側）
 | 項目 | バージョン |
 |---|---|
-| AI Runtime CLI (`air`) | v1.0.0 |
-| Databricks CLI | v0.297.2 |
+| Databricks CLI（AI Runtime CLI = `databricks air` 同梱） | v1.19.0（`air images push` は 1.19.0 以上が必要） |
+| カスタムイメージの置き場 | Databricks Artifact Registry（UC: `<catalog>.<schema>.verl-gemma4:<tag>`） |
 | ベースイメージ | `databricksruntime/air:dcs-base-aws-devel-cu13` |
 | CUDA (nvcc) | 13.0.88 |
 | Python | 3.12.3 |

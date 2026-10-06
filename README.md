@@ -1,11 +1,20 @@
-# verl + FSDP2 GRPO for Gemma4-26B-A4B (MoE) on Databricks AI Runtime (`air` CLI)
+# verl + FSDP2 GRPO for Gemma4-26B-A4B (MoE) on Databricks AI Runtime (`databricks air` CLI)
 
 A working sample that submits a verl **GRPO (RL)** + **FSDP2** training job for
 **google/gemma-4-26B-A4B-it** (a 25.8B Mixture-of-Experts model: 128 experts,
 8 active, hybrid sliding+full attention, multimodal) to Databricks AI Runtime
-serverless GPU, from your laptop, via the `air` CLI.
+serverless GPU, from your laptop, via the `databricks air` CLI (Databricks CLI ≥ v1.19.0).
 
-**Verified working** on real hardware (all four `Training Progress 100% (3/3)` → `SUCCESS`):
+> **Oct 2026 AI Runtime updates applied**: the AI Runtime CLI is now part of the Databricks
+> CLI (`databricks air ...`; the standalone Python `air` / `databricks-air` is not needed), and
+> custom images live in **Databricks Artifact Registry (Unity Catalog)** instead of Docker Hub —
+> push with `databricks air images push`, reference with
+> `environment.unity_catalog_image: <catalog>.<schema>.<image>:<tag>`. The old
+> `environment.docker_image.url` field and `air register image` are not available in the new CLI.
+> Requires the **AI Runtime Beta Features** and **Databricks Artifact Registry** previews.
+
+**Verified working** on real hardware (all four `Training Progress 100% (3/3)` → `SUCCESS`;
+re-verified 2026-10-06 with Databricks CLI v1.19.0 `databricks air` + Artifact Registry image):
 - **Text, single node** (`GPU_8xH100`): real reward/grad metrics (rewards 0.7–0.97 on gsm8k).
 - **Text, multi-node** (2 nodes = 16×H100): Ray cluster across nodes, clean worker exit.
 - **Multimodal (image), single node**: geo3k image data, verl `main` (Gemma4 vision processor). See §6 of setup.md.
@@ -63,8 +72,9 @@ GRPO setup. Each is handled in the shipped scripts; details in setup.md 付録B:
 
 ## Quick start
 
-Prerequisites: `git`, `databricks`, `air`, and `docker` CLIs installed; `databricks
-auth login` and `docker login` done. Then clone this repo and run the script:
+Prerequisites: `git`, `databricks` (≥ v1.19.0), and `docker` installed; `databricks auth
+login` done (no `docker login` needed — the push uses your Databricks OAuth profile). Then
+clone this repo and run the script:
 
 ```bash
 git clone <REPO_URL> verl-gemma4
@@ -72,20 +82,22 @@ cd verl-gemma4
 bash quickstart.sh
 ```
 
-It interactively collects your profile / Docker Hub user / catalog / schema /
-volume / email, then automates: create UC Volume → build the image (single build)
-→ push + register. Data prep and training are run manually afterward (see setup.md).
+It interactively collects your profile / catalog / schema / image tag / volume / email,
+then automates: create UC Volume → build the image (single build) → push to Artifact
+Registry as `<catalog>.<schema>.verl-gemma4:<tag>`. If that image already exists in UC
+(e.g. pre-pushed for a workshop), answer `y` to skip the build/push. Data prep and
+training are run manually afterward (see setup.md).
 
 ## Files
 | file | role |
 |---|---|
 | `setup.md` | **Primary guide** — build everything from scratch, step by step (JA) |
-| `quickstart.sh` | Automates the image build + register (interactive) |
+| `quickstart.sh` | Automates the image build + Artifact Registry push (interactive) |
 | `Dockerfile` | Custom cu13 AI Runtime image (the version set above) |
-| `grpo_gemma4.yaml` | air workload: 8×H100 GRPO (text) via the custom image |
-| `grpo_gemma4_multinode.yaml` | air workload: 2-node (16×H100) GRPO (text) |
-| `grpo_gemma4_mm.yaml` | air workload: 8×H100 **multimodal (image)** GRPO (setup.md §6) |
-| `grpo_gemma4_mm_multinode.yaml` | air workload: 2-node **multimodal (image)** GRPO (setup.md §6) |
+| `grpo_gemma4.yaml` | `databricks air` workload: 8×H100 GRPO (text) via the custom image |
+| `grpo_gemma4_multinode.yaml` | `databricks air` workload: 2-node (16×H100) GRPO (text) |
+| `grpo_gemma4_mm.yaml` | `databricks air` workload: 8×H100 **multimodal (image)** GRPO (setup.md §6) |
+| `grpo_gemma4_mm_multinode.yaml` | `databricks air` workload: 2-node **multimodal (image)** GRPO (setup.md §6) |
 | `run_grpo.sh` | verl GRPO launcher, single node (Gemma4 fixes: fsdp patch, SDPA, nccl_timeout) |
 | `run_grpo_multinode.sh` | verl GRPO launcher, multi-node (Ray cluster orchestration) |
 | `prep_gsm8k_deps.yaml` | tiny text-only gsm8k data prep (base env, no image) |

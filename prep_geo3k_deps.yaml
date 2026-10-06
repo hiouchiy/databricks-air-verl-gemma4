@@ -3,7 +3,7 @@
 # needed — only datasets/pyarrow). Writes verl-format parquet to a UC Volume.
 # This is a "does it run" smoke: 64 train / 8 test samples only.
 #
-#   air run --file prep_geo3k_deps.yaml -p <PROFILE> --watch
+#   databricks air run --file prep_geo3k_deps.yaml -p <PROFILE> --watch
 # =============================================================================
 
 experiment_name: prep-geo3k-deps

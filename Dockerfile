@@ -25,14 +25,16 @@
 #     because they are cheap and harmless; they can be dropped for a slimmer image
 #     once a Gemma4-only build is confirmed (left in for now to reuse the proven layer set).
 #
-# Build (amd64) + push to Docker Hub (logged in via `docker login`):
+# Build (amd64) + push to Databricks Artifact Registry (Unity Catalog; CLI >= 1.19.0):
 #   docker build --platform linux/amd64 \
 #     --build-arg PIP_INDEX_URL=https://pypi.org/simple \
-#     --build-arg BUILD_FLASH_ATTN=1 \
+#     --build-arg BUILD_FLASH_ATTN=0 \
 #     -v "$PWD/wheelhouse:/wheelhouse:ro" \
-#     -t docker.io/<DOCKERHUB_USER>/verl-gemma4:v1 -f Dockerfile .
-#   docker push docker.io/<DOCKERHUB_USER>/verl-gemma4:v1
-#   air register image <DOCKERHUB_USER>/verl-gemma4:v1 -p <PROFILE>
+#     -t verl-gemma4:v1 -f Dockerfile .
+#   databricks air images push --source verl-gemma4:v1 \
+#     --catalog <catalog> --schema <schema> --artifact verl-gemma4:v1 -p <PROFILE>
+#   → reference it in the workload YAML as
+#     environment.unity_catalog_image: <catalog>.<schema>.verl-gemma4:v1
 # =============================================================================
 FROM databricksruntime/air:dcs-base-aws-devel-cu13
 

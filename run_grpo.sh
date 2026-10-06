@@ -38,13 +38,16 @@ export PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:Tr
 # ("Unsupported processor type") — so IMAGE data (geo3k) can't build messages.
 # verl's Gemma4Processor support is only on the MAIN branch (NOT in any release
 # incl. 0.8.0; verified). For image training, set MULTIMODAL=1 to install verl
-# main (0.9.0.dev0) with --no-deps at launch (keeps vllm0.24/torch2.11/transformers5.14).
+# main (pinned commit 8718ca30, 0.10.0.dev0) with --no-deps at launch (keeps vllm0.24/torch2.11/transformers5.14).
 # main also already sorts named_buffers, so the fsdp patch below becomes a no-op.
 if [ "${MULTIMODAL:-0}" = "1" ]; then
-    echo "[multimodal] installing verl main (--no-deps) for Gemma4 vision processor"
+    # Pinned to the verl main commit verified on 2026-10-06 (verl 0.10.0.dev0); main
+    # moves daily, so an unpinned @main can break without notice. Override with VERL_REF.
+    VERL_REF="${VERL_REF:-8718ca30a3f002f93b7c4fd99b9b2506718681bc}"
+    echo "[multimodal] installing verl main@${VERL_REF} (--no-deps) for Gemma4 vision processor"
     uv pip install --python /opt/venv/bin/python3 --no-deps --force-reinstall \
-        "git+https://github.com/verl-project/verl.git@main" 2>&1 | tail -3 || \
-      uv pip install --no-deps --force-reinstall "git+https://github.com/verl-project/verl.git@main" 2>&1 | tail -3
+        "git+https://github.com/verl-project/verl.git@${VERL_REF}" 2>&1 | tail -3 || \
+      uv pip install --no-deps --force-reinstall "git+https://github.com/verl-project/verl.git@${VERL_REF}" 2>&1 | tail -3
     # verl main's TaskRunnerV1 imports TransferQueue (a new dep, PyPI: TransferQueue).
     # Install it --no-deps so it does NOT drag transformers down to verl main's
     # declared pin (<5.11) — we must keep transformers 5.14.1 for gemma4 + vllm 0.24.

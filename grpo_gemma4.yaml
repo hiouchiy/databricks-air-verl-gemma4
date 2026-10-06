@@ -5,12 +5,14 @@
 # Dockerfile.
 #
 # Prereqs:
-#   1) Build + push the image (see Dockerfile header / README).
-#   2) air register image __IMAGE__ -p <PROFILE>
+#   1) Build the image (see Dockerfile header / README).
+#   2) Push it to Databricks Artifact Registry (Unity Catalog):
+#        databricks air images push --source <local-image> --catalog <c> --schema <s> \
+#          --artifact verl-gemma4:<tag> -p <PROFILE>
 #   3) Prepare data: prep_gsm8k_deps.yaml (writes tiny text-only gsm8k parquet to the Volume).
 #
 # Submit:
-#   air run --file grpo_gemma4.yaml -p <PROFILE> --watch
+#   databricks air run --file grpo_gemma4.yaml -p <PROFILE> --watch
 #
 # Source pattern (MoE + FSDP2): https://github.com/verl-project/verl/blob/main/examples/grpo_trainer/run_qwen3_5_27b_fsdp.sh
 # (verl has no Gemma4-specific GRPO script; adapted from the Qwen3.5-27B MoE example.)
@@ -23,12 +25,12 @@ compute:
   num_accelerators: 8
   accelerator_type: GPU_8xH100
 
-# --- Custom AI Runtime image (built FROM databricksruntime/air cu13 base).
+# --- Custom AI Runtime image (built FROM databricksruntime/air cu13 base), stored in
+#     Databricks Artifact Registry as <catalog>.<schema>.<image>:<tag> (no registry host).
 #     mutually exclusive with version/dependencies. Code (run_grpo.sh etc.) is
 #     baked into the image at /app.
 environment:
-  docker_image:
-    url: __IMAGE__
+  unity_catalog_image: __IMAGE__
 
 # Upload only the scripts so the LATEST run_grpo.sh is used (avoids rebuilding the
 # 20GB image for a script change). include_paths keeps the 4.3GB ./wheelhouse OUT
