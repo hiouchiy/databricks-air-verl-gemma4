@@ -360,7 +360,8 @@ databricks air run --file gen/prep_gsm8k_deps.yaml -p PROF --watch
 databricks air run --file gen/grpo_gemma4.yaml -p PROF --watch
 ```
 → `Training Progress: 100% (3/3)` → `Job status: SUCCESS` で学習が回っています
-（既定で SDPA + `use_remove_padding=False`）。実機では step ごとに
+（既定で SDPA + `use_remove_padding=False`）。終了直前に `DataLoader worker ... is killed by signal: Killed`
+というトレースバックが出ることがありますが、正常な終了処理です（§7-3）。実機では step ごとに
 `critic/rewards/mean`・`grad_norm` 等のメトリクスが出ます。
 
 本番学習への切り替え:
@@ -650,6 +651,7 @@ databricks air cancel <RUN_ID> -p handson
 | `permission denied ... docker.sock`（Linux） | `docker` に sudo が必要な状態です。`sudo usermod -aG docker $USER` を実行して、ログインし直してください。 |
 | `PERMISSION_DENIED: Databricks Artifact Registry is not enabled for this workspace.`（push が `trying to reuse blob ... StatusCode: 403` で止まる） | ワークスペースで Previews の「Databricks Artifact Registry」が有効になっていません。管理者が ON にしてから再実行してください。 |
 | `Error: Folder Users is protected`（`databricks air run` の直後） | テンプレートの YAML（リポジトリ直下の `smoke_test.yaml` など）をそのまま実行しています。`__WS_EMAIL__` が置き換わっていないためです。`quickstart.sh` で `gen/` を生成し、`--file gen/smoke_test.yaml` のように `gen/` の下のファイルを実行してください。 |
+| 学習の最後に `'Final validation metrics: None'` に続いて `Exception ignored in atexit callback ... RuntimeError: DataLoader worker (pid ...) is killed by signal: Killed.` というトレースバックが出る | **エラーではありません（無視して構いません）**。学習が終わったあと、`run_grpo.sh` が Ray を止める際に DataLoader のワーカーが強制終了されるために出る、終了時のメッセージです。成功の判断は、`Training Progress: 100% (3/3)`、`[run_grpo] verl exit code=0; ray stopped; exiting.`、ジョブの最終ステータス `SUCCESS`（`databricks air get <RUN_ID>` で確認）で行ってください。 |
 | `\` で改行したコマンドの後半が、別のコマンドとして実行される | 行末の `\` の後ろにスペースが入っています。`\` を行の最後の文字にしてください。 |
 
 ---
