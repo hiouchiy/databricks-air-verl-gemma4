@@ -83,18 +83,20 @@ AI Runtime の「依存関係をジョブ実行時にインストールする方
 → **CUDA 13 の devel ベースイメージ**の上に必要物を固めた**カスタムイメージ**を作るのが確実な方法です。
 
 ### 0-4. 作業の流れ
-1. **ソース一式を Git リポジトリから取得（clone）する**（§2）
-2. CLI と認証、UC Volume を用意する（§1）
-3. **学習環境イメージを作る**（§3）。**1回のビルドで完結**（FA ビルド不要）。push → 登録。
-4. **動作確認用データ（gsm8k, テキスト）を用意**（§4-2）
-5. 単一ノード（8×H100）で GRPO 学習を実行（§4）
-6. マルチノード（2ノード = 16×H100）で GRPO 学習を実行（§5）
+1. CLI と認証、UC Volume を用意する（§1）
+2. **ソース一式を Git リポジトリから取得（clone）する**（§2）
+3. **学習用イメージを Artifact Registry に用意する**（§3）。検証済みイメージを Docker Hub から取り込む（§3-3）か、
+   ソースからビルドする（§3-2）
+4. **YAML とスクリプトを自分の環境向けに生成する（`gen/`）**（§3-4）
+5. **動作確認用データ（gsm8k, テキスト）を用意**（§4-2）
+6. 単一ノード（8×H100）で GRPO 学習を実行（§4）
+7. マルチノード（2ノード = 16×H100）で GRPO 学習を実行（§5）
 
 > §1（CLI・認証）と §2（clone）は順不同です。本ガイドはまず §2 でソースを取得し、
 > その中の `quickstart.sh`／各ファイルを使う前提で §1 以降を説明します。
 
-> **ラクをしたい場合（推奨）**: §1後半〜§3 は付属の **`quickstart.sh`** が一括で実行します。
-> 対話で数項目を入力するだけで、Volume 作成 → イメージ ビルド/push/登録 まで自動で進みます（§0-5）。
+> **ラクをしたい場合（推奨）**: §1-4（Volume）・§3（イメージ）・§3-4（`gen/` の生成）は、付属の **`quickstart.sh`** が
+> 一括で実行します。対話で数項目を入力するだけです（§0-5）。本文の手順を1つずつ進めても、結果は同じになります。
 
 ### 0-5. クイックスタート（`quickstart.sh` / Windows は `quickstart.ps1`）
 §1後半〜§3 を自動化したスクリプトです（**OS 別のコピペ用手順は §7**）。**事前に** 以下だけ済ませておいてください:
@@ -173,13 +175,10 @@ databricks volumes create <catalog> <schema> verl_workspace MANAGED -p PROF
 ソース一式（Dockerfile・スクリプト・YAML・本ガイド）は Git リポジトリで配布されます。
 まずローカル PC にクローンし、以降の作業はそのディレクトリの中で行います。
 ```bash
-git clone <REPO_URL> verl-gemma4
+git clone https://github.com/hiouchiy/databricks-air-verl-gemma4.git verl-gemma4
 cd verl-gemma4
 ```
-> `<REPO_URL>` は配布された Git リポジトリの URL に置き換えてください。リポジトリが
-> **非公開（private）**の場合は、事前に閲覧権限の付与とアクセス認証（GitHub なら
-> Personal Access Token または SSH 鍵、`gh auth login` 等）が必要です。
-> Git を使わず ZIP で受け取った場合は、展開して `cd` するだけで同じです。
+> リポジトリは公開されています（認証不要）。Git を使わず ZIP で受け取った場合は、展開して `cd` するだけで同じです。
 
 クローンすると以下のファイルが揃います。
 
@@ -204,9 +203,8 @@ cd verl-gemma4
 > `Error: Folder Users is protected` などで失敗します。必ず先に `quickstart.sh`（または §7-1 の手動手順）で
 > **`gen/` を生成し、`gen/` の下のファイルを実行**してください（`databricks air run --file gen/smoke_test.yaml ...`）。
 
-各ファイルには環境依存の値がプレースホルダで入っています。`quickstart.sh` を使う場合は
-対話入力から自動で置換され、`gen/` に出力されます（§0-5）。手動で進める場合は、§7-1 の手動手順で
-`gen/` に出力するか、次の値を自分の環境に合わせて置換してください:
+各ファイルには環境依存の値がプレースホルダで入っています。§3-4 の手順（または `quickstart.sh`）で
+次の値を自分の環境向けに置き換え、`gen/` に出力します:
 - `__IMAGE__`（学習イメージの UC 名 `<catalog>.<schema>.verl-gemma4:<tag>`。レジストリのホスト名は含めない）
 - `__VOL__` / `$VOL`（UC Volume パス）
 - `__WS_EMAIL__` / `/Workspace/Users/<自分のメール>/...`（MLflow 実験ディレクトリ）
@@ -304,6 +302,30 @@ crane copy --platform linux/amd64 \
 - 参考: **Databricks 上のジョブの中から**同じコピーを試しましたが、レジストリへの接続がリセットされて
   失敗しました（2026-10-06 時点）。現時点では、PC から実行してください。
 
+### 3-4. YAML とスクリプトを自分の環境向けに生成する（`gen/`）
+リポジトリ直下の `*.yaml` / `run_grpo*.sh` はテンプレートで、3つのプレースホルダ
+（`__IMAGE__` / `__VOL__` / `__WS_EMAIL__`）が入っています。これを自分の値に置き換えたものを `gen/` に作ります。
+**§4 以降で実行するのは、すべて `gen/` の下のファイルです。**
+```bash
+# クローンしたディレクトリ（§2 の verl-gemma4）の中で実行します
+CATALOG=<catalog>; SCHEMA=<schema>; VOLUME=verl_workspace; TAG=v1
+EMAIL=<ワークスペースのメールアドレス>
+IMAGE="${CATALOG}.${SCHEMA}.verl-gemma4:${TAG}"      # §3 で用意したイメージの UC 名（レジストリのホスト名は含めない）
+VOL="/Volumes/${CATALOG}/${SCHEMA}/${VOLUME}"        # §1-4 で作った Volume
+
+mkdir -p gen
+for t in grpo_gemma4.yaml grpo_gemma4_multinode.yaml grpo_gemma4_mm.yaml grpo_gemma4_mm_multinode.yaml \
+         smoke_test.yaml prep_gsm8k_deps.yaml prep_geo3k_deps.yaml run_grpo.sh run_grpo_multinode.sh; do
+  sed -e "s#__IMAGE__#${IMAGE}#g" -e "s#__VOL__#${VOL}#g" -e "s#__WS_EMAIL__#${EMAIL}#g" "$t" > "gen/$t"
+done
+grep -l -E "__IMAGE__|__VOL__|__WS_EMAIL__" gen/* || echo "OK: no placeholders left"
+for y in gen/*.yaml; do databricks air run -f "$y" --dry-run -p PROF; done   # すべて "valid" と出ればよい
+```
+- `OK: no placeholders left` と表示され、7つの YAML すべてで `is valid; not submitting.` と出れば完了です。
+- エディタで各 YAML のプレースホルダを直接書き換えても構いません。その場合も、学習用 YAML は同じディレクトリの
+  `run_grpo*.sh` をアップロードするので、`gen/` に揃えて置いてください。
+- `quickstart.sh` を使った場合は、このステップは実行済みです（結果は同じです）。
+
 **ここまでで学習可能な状態です。**
 
 ---
@@ -312,7 +334,7 @@ crane copy --platform linux/amd64 \
 
 > **重要: リポジトリ直下の `*.yaml` / `run_grpo*.sh` はテンプレートです。直接実行しないでください。**
 > プレースホルダ（`__IMAGE__` / `__VOL__` / `__WS_EMAIL__`）が入ったままなので、そのまま `databricks air run` すると
-> `Error: Folder Users is protected` などで失敗します。必ず先に `quickstart.sh`（または §7-1 の手動手順）で
+> `Error: Folder Users is protected` などで失敗します。必ず先に **§3-4**（または `quickstart.sh`）で
 > **`gen/` を生成し、`gen/` の下のファイルを実行**してください（`databricks air run --file gen/smoke_test.yaml ...`）。
 
 ### 4-1. 疎通確認（1×A10、安価。推奨）
