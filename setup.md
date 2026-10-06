@@ -199,9 +199,14 @@ cd verl-gemma4
 | `prep_gsm8k_deps.yaml` | 動作確認用の小さな学習データ（gsm8k, テキスト）を用意するジョブ |
 | `smoke_test.yaml` / `smoke_test.py` | 依存疎通確認（1×A10、安価） |
 
+> **重要: リポジトリ直下の `*.yaml` / `run_grpo*.sh` はテンプレートです。直接実行しないでください。**
+> プレースホルダ（`__IMAGE__` / `__VOL__` / `__WS_EMAIL__`）が入ったままなので、そのまま `databricks air run` すると
+> `Error: Folder Users is protected` などで失敗します。必ず先に `quickstart.sh`（または §7-1 の手動手順）で
+> **`gen/` を生成し、`gen/` の下のファイルを実行**してください（`databricks air run --file gen/smoke_test.yaml ...`）。
+
 各ファイルには環境依存の値がプレースホルダで入っています。`quickstart.sh` を使う場合は
-対話入力から自動で置換されます（§0-5）。手動で進める場合は、次の値を自分の環境に合わせて
-置換してください:
+対話入力から自動で置換され、`gen/` に出力されます（§0-5）。手動で進める場合は、§7-1 の手動手順で
+`gen/` に出力するか、次の値を自分の環境に合わせて置換してください:
 - `__IMAGE__`（学習イメージの UC 名 `<catalog>.<schema>.verl-gemma4:<tag>`。レジストリのホスト名は含めない）
 - `__VOL__` / `$VOL`（UC Volume パス）
 - `__WS_EMAIL__` / `/Workspace/Users/<自分のメール>/...`（MLflow 実験ディレクトリ）
@@ -305,15 +310,20 @@ crane copy --platform linux/amd64 \
 
 ## 4. 単一ノード（8×H100）で学習
 
+> **重要: リポジトリ直下の `*.yaml` / `run_grpo*.sh` はテンプレートです。直接実行しないでください。**
+> プレースホルダ（`__IMAGE__` / `__VOL__` / `__WS_EMAIL__`）が入ったままなので、そのまま `databricks air run` すると
+> `Error: Folder Users is protected` などで失敗します。必ず先に `quickstart.sh`（または §7-1 の手動手順）で
+> **`gen/` を生成し、`gen/` の下のファイルを実行**してください（`databricks air run --file gen/smoke_test.yaml ...`）。
+
 ### 4-1. 疎通確認（1×A10、安価。推奨）
 ```bash
-databricks air run --file smoke_test.yaml -p PROF --watch
+databricks air run --file gen/smoke_test.yaml -p PROF --watch
 ```
 → `SMOKE TEST: PASS`（torch / transformers / vllm / verl / gemma4 認識 が OK）を確認。
 
 ### 4-2. 動作確認用データの準備（gsm8k, テキスト）
 ```bash
-databricks air run --file prep_gsm8k_deps.yaml -p PROF --watch
+databricks air run --file gen/prep_gsm8k_deps.yaml -p PROF --watch
 ```
 → `$VOL/gsm8k/{train,test}.parquet`（64 train / 8 test の少量データ）が作られます。
 本番は実データに差し替えます（データ形式は verl の gsm8k 形式に準拠）。
@@ -325,7 +335,7 @@ databricks air run --file prep_gsm8k_deps.yaml -p PROF --watch
 
 ### 4-3. 単一ノード（8×H100）で GRPO を実行
 ```bash
-databricks air run --file grpo_gemma4.yaml -p PROF --watch
+databricks air run --file gen/grpo_gemma4.yaml -p PROF --watch
 ```
 → `Training Progress: 100% (3/3)` → `Job status: SUCCESS` で学習が回っています
 （既定で SDPA + `use_remove_padding=False`）。実機では step ごとに
@@ -370,7 +380,7 @@ verl は複数ノードを **Ray クラスタ**で束ねます（torchrun では
 
 ### 5-2. 実行
 ```bash
-databricks air run --file grpo_gemma4_multinode.yaml -p PROF --watch
+databricks air run --file gen/grpo_gemma4_multinode.yaml -p PROF --watch
 ```
 成功時、ログに以下が順に出ます:
 - 2ノードで Ray クラスタが形成される（`nRanks 2 nNodes 2`）
@@ -416,14 +426,14 @@ databricks air run --file grpo_gemma4_multinode.yaml -p PROF --watch
 まず画像入りデータ（verl の geo3k 形式、`images` 列を持つ parquet）を用意します。本リポの
 `prep_geo3k_deps.yaml` で小さな geo3k（64 train / 8 test）を Volume に作れます:
 ```bash
-databricks air run --file prep_geo3k_deps.yaml -p PROF --watch   # → $VOL/geo3k/{train,test}.parquet
+databricks air run --file gen/prep_geo3k_deps.yaml -p PROF --watch   # → $VOL/geo3k/{train,test}.parquet
 ```
 その上で GRPO を実行します:
 ```bash
 # 単ノード（8×H100）
-databricks air run --file grpo_gemma4_mm.yaml -p PROF --watch
+databricks air run --file gen/grpo_gemma4_mm.yaml -p PROF --watch
 # マルチノード（2ノード = 16×H100）
-databricks air run --file grpo_gemma4_mm_multinode.yaml -p PROF --watch
+databricks air run --file gen/grpo_gemma4_mm_multinode.yaml -p PROF --watch
 ```
 `grpo_gemma4_mm*.yaml` は `MULTIMODAL=1` / `IMAGE_KEY=images` と、下記のメモリ設定を `env_variables`
 で渡します。成功時 `Training Progress 100% (3/3)` → `Job status: SUCCESS`。
@@ -471,6 +481,8 @@ databricks air run --file grpo_gemma4_mm_multinode.yaml -p PROF --watch
   他のメンバーは、quickstart の「イメージの用意方法」に `skip` と答えてください（Docker は不要です）。
 - 事前に、ワークスペース管理者が Previews で「AI Runtime Beta Features」と「Databricks Artifact Registry」を
   有効にしておいてください（§0-2）。
+- **実行するのは、必ず `gen/` の下のファイルです。** リポジトリ直下の `*.yaml` はテンプレートなので、
+  直接実行すると失敗します。
 
 ### 7-1. macOS / Linux（WSL を含む）
 ```bash
@@ -608,12 +620,14 @@ databricks air cancel <RUN_ID> -p handson
 >   `quickstart.ps1` も `gen\` に LF で書き出します。
 > - Windows ではソースからのイメージのビルド（`build`）は扱いません（検証済みイメージの取り込みを使ってください）。
 
-### 7-3. イメージ取り込みでよくあるエラー
+### 7-3. よくあるエラー
 | エラー・症状 | 原因と対処 |
 |---|---|
 | `multiple Databricks profiles match workspace ID <ID>: A and B ...` | `~/.databrickscfg` に、同じワークスペースの `workspace_id` を持つプロファイルが複数あります（同じワークスペースに別名で `databricks auth login` した場合など）。認証ヘルパーは workspace_id でプロファイルを探すので、`-p` を指定していても失敗します。**使うプロファイル以外から `workspace_id = <ID>` の行を消してから**（プロファイル自体は残して構いません）、再実行してください。 |
 | `docker が見つかりません` / `docker: command not found` | Docker が PATH にありません。podman を使う場合は、`docker` という名前で podman を呼べるようにします（Linux: `podman-docker` パッケージを入れる。または `ln -sf "$(command -v podman)" ~/podshim/docker` を作り、`export PATH=~/podshim:$PATH`）。macOS では先に `podman machine start` を実行してください。Docker も podman も使えない場合は crane を使います（§7-1）。 |
 | `permission denied ... docker.sock`（Linux） | `docker` に sudo が必要な状態です。`sudo usermod -aG docker $USER` を実行して、ログインし直してください。 |
+| `PERMISSION_DENIED: Databricks Artifact Registry is not enabled for this workspace.`（push が `trying to reuse blob ... StatusCode: 403` で止まる） | ワークスペースで Previews の「Databricks Artifact Registry」が有効になっていません。管理者が ON にしてから再実行してください。 |
+| `Error: Folder Users is protected`（`databricks air run` の直後） | テンプレートの YAML（リポジトリ直下の `smoke_test.yaml` など）をそのまま実行しています。`__WS_EMAIL__` が置き換わっていないためです。`quickstart.sh` で `gen/` を生成し、`--file gen/smoke_test.yaml` のように `gen/` の下のファイルを実行してください。 |
 | `\` で改行したコマンドの後半が、別のコマンドとして実行される | 行末の `\` の後ろにスペースが入っています。`\` を行の最後の文字にしてください。 |
 
 ---

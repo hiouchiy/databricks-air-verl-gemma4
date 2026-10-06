@@ -1,4 +1,9 @@
 # =============================================================================
+# The copy at the repo root is a TEMPLATE (it still has placeholders) — do NOT run it directly.
+# Run quickstart.sh (or README "Option B") and run the generated copy under gen/ instead.
+# リポジトリ直下のものはテンプレートです。直接実行せず、quickstart.sh で生成した gen/ の下のファイルを実行してください。
+# （gen/ の下にあるこのファイルは生成済みのコピーなので、そのまま実行して構いません）
+#
 # MULTI-NODE variant: verl GRPO + FSDP2 for Gemma4-26B-A4B (MoE) on 2 x 8xH100
 # (16 GPUs).
 #
@@ -10,7 +15,7 @@
 #     example). Adapted from verl's SkyPilot/Slurm multi-node pattern onto AI
 #     Runtime's injected NODE_RANK/MASTER_ADDR.
 #
-#   databricks air run --file grpo_gemma4_multinode.yaml -p <PROFILE> --watch
+#   databricks air run --file gen/grpo_gemma4_multinode.yaml -p <PROFILE> --watch
 #
 # Refs: docs .../cli/examples/multinode-llm-sft ; verl multinode.rst
 # =============================================================================

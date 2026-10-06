@@ -1,4 +1,9 @@
 # =============================================================================
+# The copy at the repo root is a TEMPLATE (it still has placeholders) — do NOT run it directly.
+# Run quickstart.sh (or README "Option B") and run the generated copy under gen/ instead.
+# リポジトリ直下のものはテンプレートです。直接実行せず、quickstart.sh で生成した gen/ の下のファイルを実行してください。
+# （gen/ の下にあるこのファイルは生成済みのコピーなので、そのまま実行して構いません）
+#
 # Prepare a TINY, TEXT-ONLY gsm8k dataset on 1x A10 using the base env (only
 # datasets/pyarrow). Writes verl-format parquet to a UC Volume.
 # This is a "does it run" smoke: 64 train / 8 test samples only.
@@ -10,7 +15,7 @@
 # gsm8k is text-only, so no multimodal processor is needed — this exercises the
 # Gemma4 MoE + verl + FSDP2 GRPO stack end-to-end.
 #
-#   databricks air run --file prep_gsm8k_deps.yaml -p <PROFILE> --watch
+#   databricks air run --file gen/prep_gsm8k_deps.yaml -p <PROFILE> --watch
 # =============================================================================
 
 experiment_name: prep-gsm8k-deps

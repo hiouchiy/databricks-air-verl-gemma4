@@ -1,4 +1,9 @@
 # =============================================================================
+# The copy at the repo root is a TEMPLATE (it still has placeholders) — do NOT run it directly.
+# Run quickstart.sh (or README "Option B") and run the generated copy under gen/ instead.
+# リポジトリ直下のものはテンプレートです。直接実行せず、quickstart.sh で生成した gen/ の下のファイルを実行してください。
+# （gen/ の下にあるこのファイルは生成済みのコピーなので、そのまま実行して構いません）
+#
 # MULTIMODAL + MULTI-NODE sample: verl GRPO + FSDP2 for Gemma4-26B-A4B (MoE) on
 # 2 x 8xH100 (16 GPUs), using IMAGE data (geo3k).
 #
@@ -12,7 +17,7 @@
 # verl's minimal batch unit (16). Single node used 4*2=8; here we use 8*2=16.
 # Memory is split across 2 nodes, so we can afford a larger batch than 1 node.
 #
-#   databricks air run --file grpo_gemma4_mm_multinode.yaml -p <PROFILE> --watch
+#   databricks air run --file gen/grpo_gemma4_mm_multinode.yaml -p <PROFILE> --watch
 # =============================================================================
 
 experiment_name: grpo-gemma4-26b-a4b-mm-2node

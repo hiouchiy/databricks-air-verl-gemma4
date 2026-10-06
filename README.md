@@ -125,6 +125,8 @@ for y in gen/*.yaml; do databricks air run -f "$y" --dry-run -p "$PROFILE"; done
 together with `gen/run_grpo*.sh`, since the training YAMLs upload the script next to them.)
 
 ### Then run
+> **Always run the files under `gen/`.** The `*.yaml` files at the repo root are templates with
+> placeholders; running them directly fails (e.g. `Error: Folder Users is protected`).
 ```bash
 databricks air run --file gen/smoke_test.yaml -p "$PROFILE" --watch              # optional, ~5 min (1xA10)
 databricks air run --file gen/prep_gsm8k_deps.yaml -p "$PROFILE" --watch         # data, ~2-3 min (1xA10)
