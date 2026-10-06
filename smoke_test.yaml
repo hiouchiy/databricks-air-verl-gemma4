@@ -2,7 +2,7 @@
 # Cheap smoke test on 1x A10 — validates the verl image + Gemma4 arch before
 # committing 8x H100. Run this FIRST.
 #
-#   air run --file smoke_test.yaml -p <PROFILE> --watch
+#   databricks air run --file smoke_test.yaml -p <PROFILE> --watch
 # =============================================================================
 
 experiment_name: smoke-verl-gemma4
@@ -13,8 +13,7 @@ compute:
   accelerator_type: GPU_1xA10
 
 environment:
-  docker_image:
-    url: __IMAGE__
+  unity_catalog_image: __IMAGE__
 
 # gemma-4-26B-A4B is Apache-2.0 and NOT gated (no HF_TOKEN needed). smoke_test.py
 # is baked into the image at /app (see Dockerfile COPY), so no code_source upload

@@ -10,7 +10,7 @@
 # gsm8k is text-only, so no multimodal processor is needed — this exercises the
 # Gemma4 MoE + verl + FSDP2 GRPO stack end-to-end.
 #
-#   air run --file prep_gsm8k_deps.yaml -p <PROFILE> --watch
+#   databricks air run --file prep_gsm8k_deps.yaml -p <PROFILE> --watch
 # =============================================================================
 
 experiment_name: prep-gsm8k-deps

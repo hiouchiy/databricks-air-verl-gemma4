@@ -12,7 +12,7 @@
 # verl's minimal batch unit (16). Single node used 4*2=8; here we use 8*2=16.
 # Memory is split across 2 nodes, so we can afford a larger batch than 1 node.
 #
-#   air run --file grpo_gemma4_mm_multinode.yaml -p <PROFILE> --watch
+#   databricks air run --file grpo_gemma4_mm_multinode.yaml -p <PROFILE> --watch
 # =============================================================================
 
 experiment_name: grpo-gemma4-26b-a4b-mm-2node
@@ -23,8 +23,7 @@ compute:
   accelerator_type: GPU_8xH100
 
 environment:
-  docker_image:
-    url: __IMAGE__
+  unity_catalog_image: __IMAGE__
 
 code_source:
   type: snapshot

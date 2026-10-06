@@ -3,7 +3,7 @@
 # IMAGE data (geo3k). Single node.
 #
 # Differences vs the text-only grpo_gemma4.yaml:
-#   - command sets MULTIMODAL=1 → run_grpo.sh installs verl main (0.9.0.dev0) at
+#   - command sets MULTIMODAL=1 → run_grpo.sh installs verl main (pinned commit 8718ca30, 0.10.0.dev0) at
 #     launch, which adds the Gemma4 vision processor (Gemma4Processor). The v3
 #     image's verl 0.7.1 rejects it, and no verl RELEASE (incl. 0.8.0) has it yet.
 #   - command sets IMAGE_KEY=images → verl builds multimodal (image) messages.
@@ -13,7 +13,7 @@
 # Prereq data: geo3k parquet on the Volume (verl geo3k format with an `images`
 # column). Use prep_geo3k_deps.yaml in this repo (or reuse existing geo3k).
 #
-#   air run --file grpo_gemma4_mm.yaml -p <PROFILE> --watch
+#   databricks air run --file grpo_gemma4_mm.yaml -p <PROFILE> --watch
 # =============================================================================
 
 experiment_name: grpo-gemma4-26b-a4b-mm
@@ -24,8 +24,7 @@ compute:
   accelerator_type: GPU_8xH100
 
 environment:
-  docker_image:
-    url: __IMAGE__
+  unity_catalog_image: __IMAGE__
 
 code_source:
   type: snapshot

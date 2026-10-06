@@ -27,14 +27,17 @@ export OPENSSL_FORCE_FIPS_MODE=0
 export OPENSSL_FIPS=0
 
 # --- MULTIMODAL mode: upgrade verl to main (Gemma4 vision processor) ----------
-# Same as run_grpo.sh: MULTIMODAL=1 installs verl main (0.9.0.dev0) + TransferQueue
+# Same as run_grpo.sh: MULTIMODAL=1 installs verl main (pinned commit 8718ca30, 0.10.0.dev0) + TransferQueue
 # (both --no-deps to keep transformers 5.14.1) so verl accepts Gemma4Processor for
 # image data. This must run on EVERY node before verl launches.
 if [ "${MULTIMODAL:-0}" = "1" ]; then
-    echo "[multimodal] installing verl main (--no-deps) for Gemma4 vision processor"
+    # Pinned to the verl main commit verified on 2026-10-06 (verl 0.10.0.dev0); main
+    # moves daily, so an unpinned @main can break without notice. Override with VERL_REF.
+    VERL_REF="${VERL_REF:-8718ca30a3f002f93b7c4fd99b9b2506718681bc}"
+    echo "[multimodal] installing verl main@${VERL_REF} (--no-deps) for Gemma4 vision processor"
     uv pip install --python /opt/venv/bin/python3 --no-deps --force-reinstall \
-        "git+https://github.com/verl-project/verl.git@main" 2>&1 | tail -3 || \
-      uv pip install --no-deps --force-reinstall "git+https://github.com/verl-project/verl.git@main" 2>&1 | tail -3
+        "git+https://github.com/verl-project/verl.git@${VERL_REF}" 2>&1 | tail -3 || \
+      uv pip install --no-deps --force-reinstall "git+https://github.com/verl-project/verl.git@${VERL_REF}" 2>&1 | tail -3
     uv pip install --python /opt/venv/bin/python3 --no-deps "TransferQueue==0.1.8" 2>&1 | tail -2 || \
       uv pip install --no-deps "TransferQueue==0.1.8" 2>&1 | tail -2 || true
     python3 -c "import verl, transfer_queue, transformers; print('[multimodal] verl', verl.__version__, '| transformers', transformers.__version__, '| transfer_queue OK')" 2>&1 | tail -1 || true

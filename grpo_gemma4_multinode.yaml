@@ -10,7 +10,7 @@
 #     example). Adapted from verl's SkyPilot/Slurm multi-node pattern onto AI
 #     Runtime's injected NODE_RANK/MASTER_ADDR.
 #
-#   air run --file grpo_gemma4_multinode.yaml -p <PROFILE> --watch
+#   databricks air run --file grpo_gemma4_multinode.yaml -p <PROFILE> --watch
 #
 # Refs: docs .../cli/examples/multinode-llm-sft ; verl multinode.rst
 # =============================================================================
@@ -23,8 +23,7 @@ compute:
   accelerator_type: GPU_8xH100
 
 environment:
-  docker_image:
-    url: __IMAGE__
+  unity_catalog_image: __IMAGE__
 
 code_source:
   type: snapshot
