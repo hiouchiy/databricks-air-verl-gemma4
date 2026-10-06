@@ -1,0 +1,9 @@
+# Scripts and YAML run on Linux AI Runtime nodes: always check them out with LF,
+# even on Windows (core.autocrlf=true would otherwise turn run_grpo.sh into CRLF
+# and bash on the node fails with "$'\r': command not found").
+*.sh       text eol=lf
+*.yaml     text eol=lf
+*.py       text eol=lf
+Dockerfile text eol=lf
+# PowerShell script for Windows users (saved as UTF-8 with BOM for Windows PowerShell 5.1)
+*.ps1      text eol=crlf

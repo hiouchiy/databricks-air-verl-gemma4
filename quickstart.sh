@@ -5,7 +5,10 @@
 # 対話で数項目を入力すると、以下を自動で行います（setup.md の §1後半〜§3）:
 #   1) UC Volume の作成
 #   2) テンプレート（*.yaml / *.sh）の値をあなたの環境向けに置換
-#   3) カスタム Docker イメージをビルド（1回）→ Databricks Artifact Registry（UC）へ push
+#   3) 学習用イメージを Databricks Artifact Registry（UC）に用意する。次の3つから選ぶ:
+#        hub   = Docker Hub の検証済みイメージ（hiouchiy/verl-gemma4:v4-verify）を取り込む（既定・推奨）
+#        skip  = すでに UC に取り込み済みのイメージを使う（例: ハンズオンで代表者が取り込み済み）
+#        build = Dockerfile からビルドして push する（時間がかかる）
 # 完了後は §4（データ準備 → 単一ノード学習）/ §5（マルチノード学習）を手動で実行できます。
 #
 # Gemma4 は SDPA を使うため、Qwen 系のような FlashAttention wheel ビルド工程はありません
@@ -14,13 +17,15 @@
 # 【事前に済ませておくこと】（このスクリプトには含めません）
 #   - ソース一式のクローン（setup.md §2）— このスクリプトはそのディレクトリ内で実行
 #   - `databricks auth login --host <URL> --profile <PROFILE>`（ブラウザ認証）
-#   - `git` / `databricks`（Databricks CLI v1.19.0 以上）/ `docker` がインストール済みであること
+#   - `git` / `databricks`（Databricks CLI v1.19.0 以上）がインストール済みであること
+#     （hub / build を選ぶ場合は `docker` も必要。skip なら不要）
 #     （AI Runtime CLI は Databricks CLI の `databricks air` に統合済み。旧 `air` は不要）
 #   - ワークスペース管理者が Previews で「AI Runtime Beta Features」と
 #     「Databricks Artifact Registry」を有効化済みであること
 #
 # 使い方:
-#   bash quickstart.sh
+#   bash quickstart.sh            （macOS / Linux / WSL）
+#   Windows の PowerShell では quickstart.ps1 を使う（setup.md §7-2）
 # =============================================================================
 set -euo pipefail
 
@@ -39,11 +44,13 @@ ask PROFILE       "Databricks CLI プロファイル名 (databricks auth login �
 ask CATALOG       "UC カタログ名（イメージと Volume の置き場）" "main"
 ask SCHEMA        "UC スキーマ名" "default"
 ask IMAGE_TAG     "イメージのタグ" "v1"
-ask SKIP_BUILD    "UC 上の既存イメージ ${CATALOG}.${SCHEMA}.verl-gemma4:<タグ> を使い、ビルド/push をスキップしますか？ (y/N)" "N"
+ask IMAGE_SOURCE  "学習イメージの用意方法 (hub=Docker Hub から取り込み / skip=取り込み済みを使う / build=ビルド)" "hub"
 ask VOLUME_NAME   "UC Volume 名" "verl_workspace"
 ask WS_EMAIL      "Workspace のあなたのメールアドレス (MLflow 実験ディレクトリ用)"
 ask PIP_INDEX     "pip インデックス URL" "https://pypi.org/simple"
 
+case "${IMAGE_SOURCE}" in hub|skip|build) ;; *) echo "IMAGE_SOURCE は hub / skip / build のいずれかを指定してください（入力: ${IMAGE_SOURCE}）"; exit 1;; esac
+HUB_IMAGE="docker.io/hiouchiy/verl-gemma4:v4-verify"   # 実機検証済みの公開イメージ
 LOCAL_IMAGE="verl-gemma4:${IMAGE_TAG}"
 # YAML の environment.unity_catalog_image に入れる UC 名（レジストリのホスト名は含めない）
 UC_IMAGE="${CATALOG}.${SCHEMA}.verl-gemma4:${IMAGE_TAG}"
@@ -53,7 +60,7 @@ cat <<EOF
 
 --- 確認 ---
   プロファイル : ${PROFILE}
-  学習イメージ : ${UC_IMAGE}  (ビルド/push スキップ: ${SKIP_BUILD})
+  学習イメージ : ${UC_IMAGE}  (用意方法: ${IMAGE_SOURCE})
   UC Volume    : ${VOL}
   MLflow email : ${WS_EMAIL}
   pip index    : ${PIP_INDEX}
@@ -67,9 +74,9 @@ say "前提チェック（Databricks CLI / docker / 認証）"
 command -v databricks >/dev/null || { echo "databricks CLI が見つかりません。v1.19.0 以上をインストールしてください。"; exit 1; }
 databricks air images push --help >/dev/null 2>&1 \
   || { echo "databricks CLI が古いです（$(databricks --version)）。v1.19.0 以上に更新してください（'databricks air images push' が必要）。"; exit 1; }
-case "${SKIP_BUILD}" in y|Y) ;; *)
-  command -v docker >/dev/null || { echo "docker が見つかりません。Docker をインストール/起動してください。"; exit 1; } ;;
-esac
+if [ "${IMAGE_SOURCE}" != "skip" ]; then
+  command -v docker >/dev/null || { echo "docker が見つかりません。Docker をインストール/起動するか、Docker を使わない方法（setup.md §3-3 の crane）で取り込んでから IMAGE_SOURCE=skip で再実行してください。"; exit 1; }
+fi
 databricks current-user me -p "${PROFILE}" >/dev/null 2>&1 \
   || { echo "プロファイル ${PROFILE} で認証できません。先に 'databricks auth login' を実行してください。"; exit 1; }
 
@@ -102,10 +109,17 @@ done
 # push 先は Databricks Artifact Registry（UC の <catalog>.<schema>.verl-gemma4:<tag>）。
 # 旧方式の Docker Hub push + `air register image` は使わない（`databricks air` には
 # register コマンドも YAML の environment.docker_image も無い）。
-case "${SKIP_BUILD}" in
-  y|Y)
-    say "§3: ビルド/push をスキップ（既存の ${UC_IMAGE} を使用）" ;;
-  *)
+case "${IMAGE_SOURCE}" in
+  skip)
+    say "§3: 取り込み済みの ${UC_IMAGE} を使用（取り込みはスキップ）" ;;
+  hub)
+    # pull はこの PC 上で行われる（Docker と 20GB 以上の空きディスクが必要）
+    say "§3: Docker Hub の検証済みイメージを取り込み: ${HUB_IMAGE} → ${UC_IMAGE}"
+    databricks air images push -p "${PROFILE}" \
+      --source "${HUB_IMAGE}" \
+      --catalog "${CATALOG}" --schema "${SCHEMA}" \
+      --artifact "verl-gemma4:${IMAGE_TAG}" ;;
+  build)
     say "§3: カスタム Docker イメージをビルド（BUILD_FLASH_ATTN=0・1回で完結）"
     mkdir -p wheelhouse
     docker build --platform linux/amd64 \

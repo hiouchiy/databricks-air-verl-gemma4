@@ -85,7 +85,7 @@ bash quickstart.sh
 It interactively collects your profile / catalog / schema / image tag / volume / email,
 then automates: create UC Volume → build the image (single build) → push to Artifact
 Registry as `<catalog>.<schema>.verl-gemma4:<tag>`. If that image already exists in UC
-(e.g. pre-pushed for a workshop), answer `y` to skip the build/push.
+(e.g. pre-pushed for a workshop), choose `skip`. Windows users run `quickstart.ps1` (setup.md §7).
 
 To skip the build entirely, import the verified public image once per workspace (setup.md §3-3):
 `databricks air images push --source docker.io/hiouchiy/verl-gemma4:v4-verify --catalog <c> --schema <s> --artifact verl-gemma4:v1 -p <PROFILE>`
@@ -96,7 +96,9 @@ training are run manually afterward (see setup.md).
 | file | role |
 |---|---|
 | `setup.md` | **Primary guide** — build everything from scratch, step by step (JA) |
-| `quickstart.sh` | Automates the image build + Artifact Registry push (interactive) |
+| `quickstart.sh` | Automates Volume + YAML generation + image import/build to Artifact Registry (interactive; macOS/Linux/WSL) |
+| `quickstart.ps1` | Windows PowerShell version of `quickstart.sh` (import or skip; no build) |
+| `.gitattributes` | Forces LF for `.sh`/`.yaml` so Windows clones still run on Linux nodes |
 | `Dockerfile` | Custom cu13 AI Runtime image (the version set above) |
 | `grpo_gemma4.yaml` | `databricks air` workload: 8×H100 GRPO (text) via the custom image |
 | `grpo_gemma4_multinode.yaml` | `databricks air` workload: 2-node (16×H100) GRPO (text) |

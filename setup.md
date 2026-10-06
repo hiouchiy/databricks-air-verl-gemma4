@@ -96,10 +96,10 @@ AI Runtime の「依存関係をジョブ実行時にインストールする方
 > **ラクをしたい場合（推奨）**: §1後半〜§3 は付属の **`quickstart.sh`** が一括で実行します。
 > 対話で数項目を入力するだけで、Volume 作成 → イメージ ビルド/push/登録 まで自動で進みます（§0-5）。
 
-### 0-5. クイックスタート（`quickstart.sh`）
-§1後半〜§3 を自動化したスクリプトです。**事前に** 以下だけ済ませておいてください:
+### 0-5. クイックスタート（`quickstart.sh` / Windows は `quickstart.ps1`）
+§1後半〜§3 を自動化したスクリプトです（**OS 別のコピペ用手順は §7**）。**事前に** 以下だけ済ませておいてください:
 - ソース一式のクローン（§2）— `quickstart.sh` はクローンしたディレクトリの中で実行します
-- CLI 導入（`git` / `databricks` v1.19.0 以上 / `docker`）
+- CLI 導入（`git` / `databricks` v1.19.0 以上。イメージを取り込む人は `docker` も）
 - `databricks auth login --host <URL> --profile <PROFILE>`（ブラウザ認証。Artifact Registry への
   push はこの OAuth プロファイルで認証されるため、`docker login` は不要）
 
@@ -107,15 +107,15 @@ AI Runtime の「依存関係をジョブ実行時にインストールする方
 cd verl-gemma4        # git clone したディレクトリ（§2）
 bash quickstart.sh
 ```
-対話で `PROFILE / カタログ / スキーマ / イメージタグ / ビルドをスキップするか / Volume名 /
+対話で `PROFILE / カタログ / スキーマ / イメージタグ / イメージの用意方法 / Volume名 /
 メールアドレス / pip インデックス` を入力すると、以下を順に実行します:
 1. UC Volume 作成
 2. テンプレート（`*.yaml` / `*.sh`）の置換 → `gen/` に生成（元の拡張子を保持）
-3. カスタムイメージをビルド（1回）→ Artifact Registry へ push（`<catalog>.<schema>.verl-gemma4:<tag>`）
-
-> **既に同じイメージが UC 上にある場合**（例: ハンズオンで講師が事前に push 済みのイメージを使う場合）は、
-> 「ビルド/push をスキップしますか？」に `y` と答えると 3. を飛ばし、YAML だけそのイメージ名で生成します
-> （その場合 `docker` は不要。イメージへの `READ VOLUME` 権限は必要）。
+3. 学習用イメージを Artifact Registry（`<catalog>.<schema>.verl-gemma4:<tag>`）に用意する。用意方法は3つから選びます:
+   - `hub`（既定・推奨）: Docker Hub の検証済みイメージ `hiouchiy/verl-gemma4:v4-verify` を取り込む（§3-3。`docker` が必要）
+   - `skip`: すでに UC に取り込み済みのイメージを使う（例: ハンズオンで代表者が取り込み済み。`docker` 不要。
+     イメージへの `READ VOLUME` 権限は必要）
+   - `build`: Dockerfile からビルドして push する（§3-2。時間がかかる。macOS / Linux のみ）
 
 完了後、`gen/prep_gsm8k_deps.yaml` でデータを用意し、`gen/grpo_gemma4.yaml` /
 `gen/grpo_gemma4_multinode.yaml` を `databricks air run` すれば学習できます（§4・§5）。
@@ -123,7 +123,7 @@ bash quickstart.sh
 `gen/` サブディレクトリに元の拡張子で出力します。）
 
 > 学習の実行（§4・§5）とデータ準備は quickstart には含めていません（パラメータを変えて
-> 何度も回すものなので手動運用が適切）。イメージの push/登録に数十分かかります。
+> 何度も回すものなので手動運用が適切）。イメージの取り込み（`hub`）は回線によって数分〜数十分かかります。
 
 ---
 
@@ -187,7 +187,8 @@ cd verl-gemma4
 |---|---|
 | `setup.md` | 本ガイド |
 | `README.md` | 英語の概要 |
-| `quickstart.sh` | §1後半〜§3 を自動化するスクリプト（§0-5） |
+| `quickstart.sh` | §1後半〜§3 を自動化するスクリプト（§0-5。macOS / Linux / WSL） |
+| `quickstart.ps1` | `quickstart.sh` の Windows（PowerShell）版（§7-2） |
 | `Dockerfile` | カスタムイメージ定義（CUDA13ベース + 全ライブラリ） |
 | `run_grpo.sh` | 単一ノード GRPO 起動スクリプト（Gemma4 向け設定込み） |
 | `run_grpo_multinode.sh` | 2ノード用 GRPO 起動スクリプト（Ray クラスタ形成込み） |
@@ -277,7 +278,7 @@ databricks air images push -p PROF \
   **20GB 以上の空きディスク**が必要で、約10GB のダウンロードと約20GB のアップロードが発生します。
 - 取り込みは**ワークスペースごとに1回で十分**です。複数人で使う場合は、代表者が1回取り込み、
   他のメンバーにはそのスキーマへの `USE CATALOG` / `USE SCHEMA` / `READ VOLUME` を付与してください。
-  他のメンバーは `quickstart.sh` の「ビルド/push をスキップしますか？」に `y` と答えれば、
+  他のメンバーは `quickstart.sh` / `quickstart.ps1` の「イメージの用意方法」に `skip` と答えれば、
   YAML だけそのイメージ名で生成されます（Docker も不要）。
 
 **Docker をインストールできない場合**は、オープンソースのコピーツール `crane`
@@ -457,6 +458,125 @@ databricks air run --file grpo_gemma4_mm_multinode.yaml -p PROF --watch
 - ここまでで「小データでの疎通＋報酬が付くこと」は確認済みです。**本番の実学習**では、データ件数・
   ステップ数を増やし、必要に応じてプロンプト整形や報酬関数を用途に合わせて調整してください
   （報酬値そのものはデータ・エポック数で変わります）。
+
+---
+
+## 7. ハンズオン用 最短手順（OS 別・コピペ用）
+
+§1〜§5 の要点を、OS ごとに上から順に実行できる形にまとめたものです。
+
+- `<ワークスペースURL>` / `<catalog>` / `<schema>` は、自分の環境の値に置き換えてください。
+  プロファイル名は `handson` としています。
+- 学習用イメージの取り込みは、**ワークスペースにつき1回**です。代表者（取り込み担当）が1回だけ実施します。
+  他のメンバーは、quickstart の「イメージの用意方法」に `skip` と答えてください（Docker は不要です）。
+- 事前に、ワークスペース管理者が Previews で「AI Runtime Beta Features」と「Databricks Artifact Registry」を
+  有効にしておいてください（§0-2）。
+
+### 7-1. macOS / Linux（WSL を含む）
+```bash
+# 1) Databricks CLI（v1.19.0 以上）
+brew tap databricks/tap && brew install databricks          # macOS（すでにある場合は brew upgrade databricks。
+                                                            #  Homebrew に求められた場合は brew trust databricks/tap も）
+# Linux / WSL の場合: curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh
+databricks --version            # v1.19.0 以上であること
+which -a databricks             # 古い CLI が先に見つかっていないか（先頭が新しいものであること）
+
+# 2) ワークスペースにログイン（ブラウザが開きます）
+databricks auth login --host https://<ワークスペースURL> --profile handson
+databricks current-user me -p handson
+
+# 3) ソースを取得
+git clone https://github.com/hiouchiy/databricks-air-verl-gemma4.git verl-gemma4
+cd verl-gemma4
+
+# 4) 環境構築（Volume の作成 → YAML の生成 → イメージの用意）
+#    「イメージの用意方法」: 取り込み担当 = hub（Docker が必要） / それ以外 = skip
+bash quickstart.sh
+```
+
+**Docker が使えない場合（取り込み担当のみ）**: 4) の前に `crane` で取り込み、4) では `skip` を選びます。
+```bash
+# Apple Silicon の Mac の例。Intel の Mac は Darwin_x86_64、Linux / WSL は Linux_x86_64 に置き換え
+curl -sSL -o crane.tgz https://github.com/google/go-containerregistry/releases/latest/download/go-containerregistry_Darwin_arm64.tar.gz
+tar -xzf crane.tgz crane
+databricks auth docker configure -p handson
+REGISTRY_HOST=$(databricks auth docker host -p handson | awk '/Registry host/{print $3}')
+./crane copy --platform linux/amd64 docker.io/hiouchiy/verl-gemma4:v4-verify "$REGISTRY_HOST/<catalog>.<schema>.verl-gemma4:v1"
+#   → 最後に "digest: sha256:3bf43abf..." と表示されれば成功
+```
+
+```bash
+# 5) 学習ジョブ
+databricks air run --file gen/smoke_test.yaml -p handson --watch               # 疎通確認（任意、約5分）
+databricks air run --file gen/prep_gsm8k_deps.yaml -p handson --watch          # データ準備（約2〜3分）
+databricks air run --file gen/grpo_gemma4.yaml -p handson --watch              # 単一ノード（約27分）
+databricks air run --file gen/grpo_gemma4_multinode.yaml -p handson --watch    # 2ノード（約28分）
+
+# 6) ジョブの確認・停止（--watch を Ctrl-C で抜けてもジョブは止まりません）
+databricks air list -p handson
+databricks air cancel <RUN_ID> -p handson
+```
+
+### 7-2. Windows（PowerShell）
+> Windows の実機では未検証です。PowerShell に固有の部分（`quickstart.ps1`、crane 手順の各行）は、
+> PowerShell 7 で動作を確認しています。うまくいかない場合は、WSL で §7-1 の手順を使ってください。
+
+```powershell
+# 1) Databricks CLI（v1.19.0 以上）
+winget install Databricks.DatabricksCLI          # すでにある場合は winget upgrade Databricks.DatabricksCLI
+#    → インストール後、PATH を反映させるために PowerShell のウィンドウを開き直す
+databricks --version            # v1.19.0 以上であること
+where.exe databricks            # 古い CLI が先に見つかっていないか（先頭が新しいものであること）
+
+# 2) ワークスペースにログイン（ブラウザが開きます）
+databricks auth login --host https://<ワークスペースURL> --profile handson
+databricks current-user me -p handson
+
+# 3) ソースを取得（git がなければ GitHub の「Code → Download ZIP」で取得して展開）
+git clone https://github.com/hiouchiy/databricks-air-verl-gemma4.git verl-gemma4
+cd verl-gemma4
+
+# 4) 環境構築（Volume の作成 → YAML の生成 → イメージの用意）
+#    「イメージの用意方法」: 取り込み担当 = hub（Docker Desktop を起動しておく） / それ以外 = skip
+powershell -ExecutionPolicy Bypass -File .\quickstart.ps1
+```
+
+**Docker が使えない場合（取り込み担当のみ）**: 4) の前に `crane` で取り込み、4) では `skip` を選びます。
+```powershell
+# ARM 版の Windows は Windows_arm64 に置き換え
+curl.exe -sSL -o crane.tgz https://github.com/google/go-containerregistry/releases/latest/download/go-containerregistry_Windows_x86_64.tar.gz
+tar -xzf crane.tgz crane.exe
+databricks auth docker configure -p handson
+$RegistryHost = ((databricks auth docker host -p handson | Select-String "Registry host:") -split ":\s*")[1].Trim()
+.\crane.exe copy --platform linux/amd64 docker.io/hiouchiy/verl-gemma4:v4-verify "$RegistryHost/<catalog>.<schema>.verl-gemma4:v1"
+#   → 最後に "digest: sha256:3bf43abf..." と表示されれば成功
+```
+上の `crane.exe copy` が `401 Unauthorized` で失敗する場合は、認証ヘルパーを使わずにトークンを直接渡してください
+（トークンの有効期限は1時間です。終わったら必ずログアウトしてください）。
+```powershell
+$token = (databricks auth token -p handson -o json | ConvertFrom-Json).access_token
+$token | .\crane.exe auth login $RegistryHost -u oauthtoken --password-stdin
+.\crane.exe copy --platform linux/amd64 docker.io/hiouchiy/verl-gemma4:v4-verify "$RegistryHost/<catalog>.<schema>.verl-gemma4:v1"
+.\crane.exe auth logout $RegistryHost
+```
+
+```powershell
+# 5) 学習ジョブ
+databricks air run --file gen\smoke_test.yaml -p handson --watch               # 疎通確認（任意、約5分）
+databricks air run --file gen\prep_gsm8k_deps.yaml -p handson --watch          # データ準備（約2〜3分）
+databricks air run --file gen\grpo_gemma4.yaml -p handson --watch              # 単一ノード（約27分）
+databricks air run --file gen\grpo_gemma4_multinode.yaml -p handson --watch    # 2ノード（約28分）
+
+# 6) ジョブの確認・停止（--watch を Ctrl-C で抜けてもジョブは止まりません）
+databricks air list -p handson
+databricks air cancel <RUN_ID> -p handson
+```
+
+> **Windows で気をつけること**
+> - `.sh` / `.yaml` は学習ノード（Linux）で使われるため、改行は LF である必要があります。リポジトリの
+>   `.gitattributes` で、Windows で clone しても LF のまま取得されるようにしています。
+>   `quickstart.ps1` も `gen\` に LF で書き出します。
+> - Windows ではソースからのイメージのビルド（`build`）は扱いません（検証済みイメージの取り込みを使ってください）。
 
 ---
 
