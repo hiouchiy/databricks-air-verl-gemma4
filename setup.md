@@ -280,6 +280,24 @@ databricks air images push -p PROF \
   他のメンバーは `quickstart.sh` の「ビルド/push をスキップしますか？」に `y` と答えれば、
   YAML だけそのイメージ名で生成されます（Docker も不要）。
 
+**Docker をインストールできない場合**は、オープンソースのコピーツール `crane`
+（[go-containerregistry](https://github.com/google/go-containerregistry/releases)、実行ファイル1つ）で、
+Docker Hub から Artifact Registry へ直接コピーできます。イメージは PC に保存されず流しながら転送されるので、
+Docker も 20GB の空きディスクも不要です（通信は PC を経由します）。
+```bash
+databricks auth docker configure -p PROF      # 認証ヘルパー（docker-credential-databricks）を設定
+databricks auth docker host -p PROF           # → Registry host: <workspace-id>.container.<region>.cloud.databricks.com
+crane copy --platform linux/amd64 \
+  docker.io/hiouchiy/verl-gemma4:v4-verify \
+  <REGISTRY_HOST>/<catalog>.<schema>.verl-gemma4:v1
+```
+- 実測では約6分で完了し、コピー後のダイジェストは Docker Hub と同じ `sha256:3bf43abf...` でした
+  （このイメージで smoke test も PASS）。
+- OAuth トークンの有効期限は1時間なので、それ以内に転送が終わる回線で実行してください。
+- 公式手順（`databricks air images push`）は Docker を前提としています。`crane` は動作を確認した代替手段です。
+- 参考: **Databricks 上のジョブの中から**同じコピーを試しましたが、レジストリへの接続がリセットされて
+  失敗しました（2026-10-06 時点）。現時点では、PC から実行してください。
+
 **ここまでで学習可能な状態です。**
 
 ---
