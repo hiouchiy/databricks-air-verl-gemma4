@@ -1,9 +1,14 @@
 # =============================================================================
+# The copy at the repo root is a TEMPLATE (it still has placeholders) — do NOT run it directly.
+# Run quickstart.sh (or README "Option B") and run the generated copy under gen/ instead.
+# リポジトリ直下のものはテンプレートです。直接実行せず、quickstart.sh で生成した gen/ の下のファイルを実行してください。
+# （gen/ の下にあるこのファイルは生成済みのコピーなので、そのまま実行して構いません）
+#
 # Prepare a TINY geo3k dataset on 1x A10 using the base env (no custom image
 # needed — only datasets/pyarrow). Writes verl-format parquet to a UC Volume.
 # This is a "does it run" smoke: 64 train / 8 test samples only.
 #
-#   databricks air run --file prep_geo3k_deps.yaml -p <PROFILE> --watch
+#   databricks air run --file gen/prep_geo3k_deps.yaml -p <PROFILE> --watch
 # =============================================================================
 
 experiment_name: prep-geo3k-deps

@@ -1,8 +1,13 @@
 # =============================================================================
+# The copy at the repo root is a TEMPLATE (it still has placeholders) — do NOT run it directly.
+# Run quickstart.sh (or README "Option B") and run the generated copy under gen/ instead.
+# リポジトリ直下のものはテンプレートです。直接実行せず、quickstart.sh で生成した gen/ の下のファイルを実行してください。
+# （gen/ の下にあるこのファイルは生成済みのコピーなので、そのまま実行して構いません）
+#
 # Cheap smoke test on 1x A10 — validates the verl image + Gemma4 arch before
 # committing 8x H100. Run this FIRST.
 #
-#   databricks air run --file smoke_test.yaml -p <PROFILE> --watch
+#   databricks air run --file gen/smoke_test.yaml -p <PROFILE> --watch
 # =============================================================================
 
 experiment_name: smoke-verl-gemma4

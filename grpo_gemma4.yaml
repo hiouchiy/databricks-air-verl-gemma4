@@ -1,4 +1,9 @@
 # =============================================================================
+# The copy at the repo root is a TEMPLATE (it still has placeholders) — do NOT run it directly.
+# Run quickstart.sh (or README "Option B") and run the generated copy under gen/ instead.
+# リポジトリ直下のものはテンプレートです。直接実行せず、quickstart.sh で生成した gen/ の下のファイルを実行してください。
+# （gen/ の下にあるこのファイルは生成済みのコピーなので、そのまま実行して構いません）
+#
 # PRIMARY sample: verl GRPO + FSDP2 for Gemma4-26B-A4B (MoE), single node 8x H100,
 # using the CUSTOM AI Runtime image built in this repo (FROM databricksruntime/air:
 # dcs-base-aws-devel-cu13 + verl + vllm 0.24 + transformers >=5.5.3). See
@@ -12,7 +17,7 @@
 #   3) Prepare data: prep_gsm8k_deps.yaml (writes tiny text-only gsm8k parquet to the Volume).
 #
 # Submit:
-#   databricks air run --file grpo_gemma4.yaml -p <PROFILE> --watch
+#   databricks air run --file gen/grpo_gemma4.yaml -p <PROFILE> --watch
 #
 # Source pattern (MoE + FSDP2): https://github.com/verl-project/verl/blob/main/examples/grpo_trainer/run_qwen3_5_27b_fsdp.sh
 # (verl has no Gemma4-specific GRPO script; adapted from the Qwen3.5-27B MoE example.)

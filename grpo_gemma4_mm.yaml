@@ -1,4 +1,9 @@
 # =============================================================================
+# The copy at the repo root is a TEMPLATE (it still has placeholders) — do NOT run it directly.
+# Run quickstart.sh (or README "Option B") and run the generated copy under gen/ instead.
+# リポジトリ直下のものはテンプレートです。直接実行せず、quickstart.sh で生成した gen/ の下のファイルを実行してください。
+# （gen/ の下にあるこのファイルは生成済みのコピーなので、そのまま実行して構いません）
+#
 # MULTIMODAL sample: verl GRPO + FSDP2 for Gemma4-26B-A4B (MoE) on 8x H100, using
 # IMAGE data (geo3k). Single node.
 #
@@ -13,7 +18,7 @@
 # Prereq data: geo3k parquet on the Volume (verl geo3k format with an `images`
 # column). Use prep_geo3k_deps.yaml in this repo (or reuse existing geo3k).
 #
-#   databricks air run --file grpo_gemma4_mm.yaml -p <PROFILE> --watch
+#   databricks air run --file gen/grpo_gemma4_mm.yaml -p <PROFILE> --watch
 # =============================================================================
 
 experiment_name: grpo-gemma4-26b-a4b-mm
