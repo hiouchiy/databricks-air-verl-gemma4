@@ -72,25 +72,67 @@ GRPO setup. Each is handled in the shipped scripts; details in setup.md 付録B:
 
 ## Quick start
 
-Prerequisites: `git`, `databricks` (≥ v1.19.0), and `docker` installed; `databricks auth
-login` done (no `docker login` needed — the push uses your Databricks OAuth profile). Then
-clone this repo and run the script:
+Prerequisites: `git` and `databricks` (Databricks CLI ≥ v1.19.0) installed, and
+`databricks auth login --host <workspace-url> --profile <PROFILE>` done. Whoever imports the
+image (once per workspace) also needs `docker` (no `docker login` needed). The workspace admin
+must enable the **AI Runtime Beta Features** and **Databricks Artifact Registry** previews.
+Step-by-step flows per OS (macOS/Linux, Windows) are in setup.md §7.
 
 ```bash
-git clone <REPO_URL> verl-gemma4
+git clone https://github.com/hiouchiy/databricks-air-verl-gemma4.git verl-gemma4
 cd verl-gemma4
-bash quickstart.sh
 ```
 
-It interactively collects your profile / catalog / schema / image tag / volume / email,
-then automates: create UC Volume → build the image (single build) → push to Artifact
-Registry as `<catalog>.<schema>.verl-gemma4:<tag>`. If that image already exists in UC
-(e.g. pre-pushed for a workshop), choose `skip`. Windows users run `quickstart.ps1` (setup.md §7).
+### Option A — `quickstart.sh` (interactive)
+```bash
+bash quickstart.sh          # Windows PowerShell: powershell -ExecutionPolicy Bypass -File .\quickstart.ps1
+```
+It asks for profile / catalog / schema / image tag / image source / volume / email, then:
+creates the UC Volume → generates `gen/*.yaml` and `gen/*.sh` → prepares the image in
+Artifact Registry as `<catalog>.<schema>.verl-gemma4:<tag>`. Image source:
+`hub` = import the verified public image `docker.io/hiouchiy/verl-gemma4:v4-verify` (default; needs Docker),
+`skip` = the image is already in UC (e.g. imported once for a workshop), `build` = build from the Dockerfile.
 
-To skip the build entirely, import the verified public image once per workspace (setup.md §3-3):
-`databricks air images push --source docker.io/hiouchiy/verl-gemma4:v4-verify --catalog <c> --schema <s> --artifact verl-gemma4:v1 -p <PROFILE>`
-(the pull happens on the machine running the command — needs Docker and ~20GB free disk). Data prep and
-training are run manually afterward (see setup.md).
+### Option B — the same steps by hand (if `quickstart.sh` fails)
+`quickstart.sh` only does the three steps below; you can run them one by one (or resume from
+the step that failed). Set your values first:
+```bash
+PROFILE=<PROFILE>; CATALOG=<catalog>; SCHEMA=<schema>; VOLUME=verl_workspace
+EMAIL=<your-workspace-email>; TAG=v1
+IMAGE="${CATALOG}.${SCHEMA}.verl-gemma4:${TAG}"      # UC image name (no registry host)
+VOL="/Volumes/${CATALOG}/${SCHEMA}/${VOLUME}"
+```
+```bash
+# 1) UC Volume (an "already exists" error is fine)
+databricks volumes create "$CATALOG" "$SCHEMA" "$VOLUME" MANAGED -p "$PROFILE"
+
+# 2) Image — once per workspace; skip if it is already in UC.
+#    Pull happens on THIS machine (needs Docker + ~20GB disk). Without Docker, use crane (setup.md §3-3 / §7).
+databricks air images push -p "$PROFILE" \
+  --source docker.io/hiouchiy/verl-gemma4:v4-verify \
+  --catalog "$CATALOG" --schema "$SCHEMA" --artifact "verl-gemma4:${TAG}"
+
+# 3) Generate gen/ (replace the 3 placeholders __IMAGE__ / __VOL__ / __WS_EMAIL__)
+mkdir -p gen
+for t in grpo_gemma4.yaml grpo_gemma4_multinode.yaml grpo_gemma4_mm.yaml grpo_gemma4_mm_multinode.yaml \
+         smoke_test.yaml prep_gsm8k_deps.yaml prep_geo3k_deps.yaml run_grpo.sh run_grpo_multinode.sh; do
+  sed -e "s#__IMAGE__#${IMAGE}#g" -e "s#__VOL__#${VOL}#g" -e "s#__WS_EMAIL__#${EMAIL}#g" "$t" > "gen/$t"
+done
+grep -l -E "__IMAGE__|__VOL__|__WS_EMAIL__" gen/* || echo "OK: no placeholders left"
+for y in gen/*.yaml; do databricks air run -f "$y" --dry-run -p "$PROFILE"; done   # all should be "valid"
+```
+(You can also edit the placeholders in each YAML by hand — keep the generated files in `gen/`
+together with `gen/run_grpo*.sh`, since the training YAMLs upload the script next to them.)
+
+### Then run
+```bash
+databricks air run --file gen/smoke_test.yaml -p "$PROFILE" --watch              # optional, ~5 min (1xA10)
+databricks air run --file gen/prep_gsm8k_deps.yaml -p "$PROFILE" --watch         # data, ~2-3 min (1xA10)
+databricks air run --file gen/grpo_gemma4.yaml -p "$PROFILE" --watch             # 1 node 8xH100, ~27 min
+databricks air run --file gen/grpo_gemma4_multinode.yaml -p "$PROFILE" --watch   # 2 nodes 16xH100, ~28 min
+databricks air list -p "$PROFILE"            # Ctrl-C on --watch does NOT stop the job
+databricks air cancel <RUN_ID> -p "$PROFILE"
+```
 
 ## Files
 | file | role |

@@ -505,6 +505,36 @@ REGISTRY_HOST=$(databricks auth docker host -p handson | awk '/Registry host/{pr
 #   → 最後に "digest: sha256:3bf43abf..." と表示されれば成功
 ```
 
+**quickstart.sh を使わない場合・途中で失敗した場合**: quickstart.sh がやっているのは次の3つだけです。
+1つずつ手で実行できます（失敗したステップから再開しても構いません）。結果は quickstart.sh とまったく同じになります。
+```bash
+# まず自分の値を設定する
+PROFILE=handson; CATALOG=<catalog>; SCHEMA=<schema>; VOLUME=verl_workspace
+EMAIL=<ワークスペースのメールアドレス>; TAG=v1
+IMAGE="${CATALOG}.${SCHEMA}.verl-gemma4:${TAG}"      # UC 上のイメージ名（レジストリのホスト名は含めない）
+VOL="/Volumes/${CATALOG}/${SCHEMA}/${VOLUME}"
+
+# (1) UC Volume を作る（"already exists" と出た場合は、そのままで問題ありません）
+databricks volumes create "$CATALOG" "$SCHEMA" "$VOLUME" MANAGED -p "$PROFILE"
+
+# (2) イメージを取り込む（取り込み担当のみ・1回だけ。取り込み済みなら飛ばす）
+#     Docker が使えない場合は、上の crane の手順で代わりに取り込む
+databricks air images push -p "$PROFILE" \
+  --source docker.io/hiouchiy/verl-gemma4:v4-verify \
+  --catalog "$CATALOG" --schema "$SCHEMA" --artifact "verl-gemma4:${TAG}"
+
+# (3) gen/ に YAML とスクリプトを生成する（3つのプレースホルダを置き換える）
+mkdir -p gen
+for t in grpo_gemma4.yaml grpo_gemma4_multinode.yaml grpo_gemma4_mm.yaml grpo_gemma4_mm_multinode.yaml \
+         smoke_test.yaml prep_gsm8k_deps.yaml prep_geo3k_deps.yaml run_grpo.sh run_grpo_multinode.sh; do
+  sed -e "s#__IMAGE__#${IMAGE}#g" -e "s#__VOL__#${VOL}#g" -e "s#__WS_EMAIL__#${EMAIL}#g" "$t" > "gen/$t"
+done
+grep -l -E "__IMAGE__|__VOL__|__WS_EMAIL__" gen/* || echo "OK: no placeholders left"
+for y in gen/*.yaml; do databricks air run -f "$y" --dry-run -p "$PROFILE"; done   # すべて "valid" と出ればよい
+```
+> 各 YAML のプレースホルダ（`__IMAGE__` / `__VOL__` / `__WS_EMAIL__`）を、エディタで直接書き換えても構いません。
+> その場合も、学習用 YAML は同じディレクトリの `run_grpo*.sh` をアップロードするので、`gen/` に揃えて置いてください。
+
 ```bash
 # 5) 学習ジョブ
 databricks air run --file gen/smoke_test.yaml -p handson --watch               # 疎通確認（任意、約5分）
