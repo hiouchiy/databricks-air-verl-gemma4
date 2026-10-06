@@ -608,6 +608,14 @@ databricks air cancel <RUN_ID> -p handson
 >   `quickstart.ps1` も `gen\` に LF で書き出します。
 > - Windows ではソースからのイメージのビルド（`build`）は扱いません（検証済みイメージの取り込みを使ってください）。
 
+### 7-3. イメージ取り込みでよくあるエラー
+| エラー・症状 | 原因と対処 |
+|---|---|
+| `multiple Databricks profiles match workspace ID <ID>: A and B ...` | `~/.databrickscfg` に、同じワークスペースの `workspace_id` を持つプロファイルが複数あります（同じワークスペースに別名で `databricks auth login` した場合など）。認証ヘルパーは workspace_id でプロファイルを探すので、`-p` を指定していても失敗します。**使うプロファイル以外から `workspace_id = <ID>` の行を消してから**（プロファイル自体は残して構いません）、再実行してください。 |
+| `docker が見つかりません` / `docker: command not found` | Docker が PATH にありません。podman を使う場合は、`docker` という名前で podman を呼べるようにします（Linux: `podman-docker` パッケージを入れる。または `ln -sf "$(command -v podman)" ~/podshim/docker` を作り、`export PATH=~/podshim:$PATH`）。macOS では先に `podman machine start` を実行してください。Docker も podman も使えない場合は crane を使います（§7-1）。 |
+| `permission denied ... docker.sock`（Linux） | `docker` に sudo が必要な状態です。`sudo usermod -aG docker $USER` を実行して、ログインし直してください。 |
+| `\` で改行したコマンドの後半が、別のコマンドとして実行される | 行末の `\` の後ろにスペースが入っています。`\` を行の最後の文字にしてください。 |
+
 ---
 
 ## 付録A: 確定バージョン（再現性のため全明記）
