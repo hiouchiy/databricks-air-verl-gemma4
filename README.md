@@ -85,7 +85,11 @@ bash quickstart.sh
 It interactively collects your profile / catalog / schema / image tag / volume / email,
 then automates: create UC Volume → build the image (single build) → push to Artifact
 Registry as `<catalog>.<schema>.verl-gemma4:<tag>`. If that image already exists in UC
-(e.g. pre-pushed for a workshop), answer `y` to skip the build/push. Data prep and
+(e.g. pre-pushed for a workshop), answer `y` to skip the build/push.
+
+To skip the build entirely, import the verified public image once per workspace (setup.md §3-3):
+`databricks air images push --source docker.io/hiouchiy/verl-gemma4:v4-verify --catalog <c> --schema <s> --artifact verl-gemma4:v1 -p <PROFILE>`
+(the pull happens on the machine running the command — needs Docker and ~20GB free disk). Data prep and
 training are run manually afterward (see setup.md).
 
 ## Files

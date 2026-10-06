@@ -260,7 +260,25 @@ databricks air images push -p PROF \
 
 > **イメージサイズの目安**: 目安として ~20GB 未満を意識してください（本構成の実測は約 20.1GB で
 > push・実行とも成功しています）。Dockerfile には `UV_NO_CACHE=1` を設定済みです。
-> push には回線次第で数十分〜1時間以上かかります（約 20GB のアップロード）。
+> push は約 20GB のアップロードです（実測では約 11 分でしたが、回線によっては数十分以上かかります）。
+
+### 3-3. （ビルドを省略する場合）検証済みイメージを Docker Hub から取り込む
+§3-2 のビルドは時間がかかるので、**本ガイドで実機検証したイメージを Docker Hub に公開しています**。
+これを自分のワークスペースの Artifact Registry に取り込めば、ビルドを省略できます。
+```bash
+databricks air images push -p PROF \
+  --source docker.io/hiouchiy/verl-gemma4:v4-verify \
+  --catalog <catalog> --schema <schema> \
+  --artifact verl-gemma4:v1
+```
+- `hiouchiy/verl-gemma4:v4-verify` は公開イメージです（`docker login` 不要、amd64、圧縮時 約10GB、展開後 約20GB）。
+  中身は付録A のバージョンのとおりです（torch 2.11.0 / vLLM 0.24.0 / transformers 5.14.1 / verl 0.7.1）。
+- **pull はクラウド側ではなく、このコマンドを実行する PC 上で行われます**。PC には Docker と
+  **20GB 以上の空きディスク**が必要で、約10GB のダウンロードと約20GB のアップロードが発生します。
+- 取り込みは**ワークスペースごとに1回で十分**です。複数人で使う場合は、代表者が1回取り込み、
+  他のメンバーにはそのスキーマへの `USE CATALOG` / `USE SCHEMA` / `READ VOLUME` を付与してください。
+  他のメンバーは `quickstart.sh` の「ビルド/push をスキップしますか？」に `y` と答えれば、
+  YAML だけそのイメージ名で生成されます（Docker も不要）。
 
 **ここまでで学習可能な状態です。**
 
