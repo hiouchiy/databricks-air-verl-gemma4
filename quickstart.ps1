@@ -80,7 +80,7 @@ Say "テンプレートを環境向けに置換 (gen\ に生成)"
 $GenDir = Join-Path $Root "gen"
 New-Item -ItemType Directory -Force -Path $GenDir | Out-Null
 $Utf8NoBom = New-Object System.Text.UTF8Encoding $false
-$Templates = @("grpo_gemma4.yaml","grpo_gemma4_multinode.yaml","grpo_gemma4_mm.yaml","grpo_gemma4_mm_multinode.yaml","smoke_test.yaml","prep_gsm8k_deps.yaml","prep_geo3k_deps.yaml","run_grpo.sh","run_grpo_multinode.sh")
+$Templates = @("grpo_gemma4.yaml","grpo_gemma4_multinode.yaml","grpo_gemma4_mm.yaml","grpo_gemma4_mm_multinode.yaml","smoke_test.yaml","prep_data_job.json","prep_gsm8k_deps.yaml","prep_geo3k_deps.yaml","run_grpo.sh","run_grpo_multinode.sh")
 foreach ($t in $Templates) {
     $src = Join-Path $Root $t
     if (-not (Test-Path $src)) { continue }
@@ -90,6 +90,13 @@ foreach ($t in $Templates) {
     [System.IO.File]::WriteAllText((Join-Path $GenDir $t), $text, $Utf8NoBom)
     Write-Host "  生成: gen\$t"
 }
+
+# ---- 2b. データ準備スクリプトをワークスペースへ（CPU のサーバーレス Jobs で実行する。GPU 不要） ----
+$PrepDir = "/Workspace/Users/$WsEmail/air-handson"
+Say "データ準備スクリプトをアップロード: $PrepDir/prep_data.py"
+databricks workspace mkdirs $PrepDir -p $Profile_
+databricks workspace import "$PrepDir/prep_data.py" --file (Join-Path $Root "prep_data.py") --format AUTO --overwrite -p $Profile_
+if ($LASTEXITCODE -ne 0) { Fail "prep_data.py のアップロードに失敗しました。" }
 
 # ---- 3. 学習用イメージを Artifact Registry に用意 -----------------------------
 if ($ImageSource -eq "skip") {
@@ -109,8 +116,8 @@ Write-Host ""
 Write-Host "  # 疎通確認（任意・安価）"
 Write-Host "  databricks air run --file gen\smoke_test.yaml -p $Profile_ --watch"
 Write-Host ""
-Write-Host "  # 動作確認用データ（gsm8k, テキスト）の準備"
-Write-Host "  databricks air run --file gen\prep_gsm8k_deps.yaml -p $Profile_ --watch"
+Write-Host "  # 動作確認用データ（gsm8k テキスト + geo3k 画像）の準備（CPU のサーバーレス・GPU 不要・約1分）"
+Write-Host "  databricks jobs submit --json '@gen\prep_data_job.json' -p $Profile_"
 Write-Host ""
 Write-Host "  # 単一ノード（8×H100）で GRPO"
 Write-Host "  databricks air run --file gen\grpo_gemma4.yaml -p $Profile_ --watch"

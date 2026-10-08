@@ -8,7 +8,7 @@ CAN_MANAGE on each run (YAML `permissions`).
 Templates (*.yaml / run_grpo*.sh) are copied from the repo root into ./templates by
 deploy.sh, and rendered here exactly like quickstart.sh does (__IMAGE__ / __VOL__ /
 __WS_EMAIL__), except that MLflow experiments go to /Workspace/Shared/air-handson so
-everyone can open them.
+everyone can open them. Data prep runs as a serverless CPU job (no GPU needed).
 """
 import io
 import json
@@ -46,15 +46,17 @@ VOL = f"/Volumes/{CATALOG}/{SCHEMA}/{VOLUME}"
 
 # Each button maps to one repo template. nodes = GPU nodes (8xH100) the run occupies.
 JOBS = {
+    # Data prep needs no GPU: a serverless CPU job (Jobs API), so it works even when GPUs are unavailable.
+    "prep_data":      {"file": "prep_data_job.json",            "label": "データ準備: gsm8k + geo3k（CPU）", "nodes": 0, "engine": "jobs"},
     "smoke":          {"file": "smoke_test.yaml",               "label": "疎通確認 (1xA10)",              "nodes": 0},
-    "prep_gsm8k":     {"file": "prep_gsm8k_deps.yaml",          "label": "データ準備: gsm8k (テキスト)",   "nodes": 0},
-    "prep_geo3k":     {"file": "prep_geo3k_deps.yaml",          "label": "データ準備: geo3k (画像)",       "nodes": 0},
     "grpo_text_1":    {"file": "grpo_gemma4.yaml",              "label": "GRPO テキスト 単一ノード",        "nodes": 1},
     "grpo_text_2":    {"file": "grpo_gemma4_multinode.yaml",    "label": "GRPO テキスト 2ノード",           "nodes": 2},
     "grpo_mm_1":      {"file": "grpo_gemma4_mm.yaml",           "label": "GRPO 画像 単一ノード",            "nodes": 1},
     "grpo_mm_2":      {"file": "grpo_gemma4_mm_multinode.yaml", "label": "GRPO 画像 2ノード",               "nodes": 2},
 }
 SCRIPTS = ["run_grpo.sh", "run_grpo_multinode.sh"]
+PREP_SCRIPT = f"{EXPERIMENT_DIR}/prep_data.py"   # uploaded by deploy.sh
+PREP_RUN_PREFIX = "prep-data"
 TERMINAL = {"SUCCESS", "FAILED", "CANCELED", "CANCELLED", "TIMEDOUT", "TIMED_OUT", "INTERNAL_ERROR", "SKIPPED"}
 
 # run_id -> {"kind", "submitted_by", "submitted_at"}; in-memory, lost on app restart.
@@ -133,6 +135,82 @@ def build_workdir(kind: str, email: str) -> str:
     return wd
 
 
+# ---- serverless CPU jobs (data prep) ----------------------------------------
+def submit_prep(kind: str, email: str):
+    spec = json.loads(render(open(os.path.join(TEMPLATES, JOBS[kind]["file"])).read()))
+    for t in spec["tasks"]:
+        t["spark_python_task"]["python_file"] = PREP_SCRIPT
+    if email:
+        spec["access_control_list"] = [{"user_name": email, "permission_level": "CAN_MANAGE"}]
+    wd = tempfile.mkdtemp(prefix=f"{kind}-")
+    path = os.path.join(wd, "job.json")
+    json.dump(spec, open(path, "w"))
+    try:
+        rc, out, err = run_cli(["jobs", "submit", "--json", f"@{path}", "--no-wait", "-o", "json"], timeout=180)
+    finally:
+        shutil.rmtree(wd, ignore_errors=True)
+    m = re.search(r'"run_id":\s*(\d+)', out)
+    if rc != 0 or not m:
+        raise HTTPException(502, detail=(err or out).strip()[-2000:])
+    run_id = m.group(1)
+    SUBMITTED[run_id] = {"kind": kind, "submitted_by": email, "submitted_at": time.time()}
+    return {"run_id": run_id}
+
+
+def job_status(run: dict) -> str:
+    st = run.get("state", {})
+    return st.get("result_state") or st.get("life_cycle_state") or "UNKNOWN"
+
+
+def iso(ms) -> str | None:
+    return time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime(ms / 1000)) if ms else None
+
+
+def list_prep_runs() -> list[dict]:
+    rc, out, _ = run_cli(["jobs", "list-runs", "--run-type", "SUBMIT_RUN", "--limit", "20", "-o", "json"])
+    if rc != 0:
+        return []
+    d = json.loads(out)
+    runs = d if isinstance(d, list) else d.get("runs", [])
+    return [{"run_id": str(r["run_id"]), "run_name": r.get("run_name"), "status": job_status(r),
+             "started_at": iso(r.get("start_time")), "kind": "prep_data", "engine": "jobs"}
+            for r in runs if (r.get("run_name") or "").startswith(PREP_RUN_PREFIX)]
+
+
+def get_job_run(run_id: str) -> dict | None:
+    """Return the Jobs-API view if this is a data-prep run, else None (= an AI Runtime run)."""
+    rc, out, _ = run_cli(["jobs", "get-run", run_id, "-o", "json"])
+    if rc != 0:
+        return None
+    r = json.loads(out)
+    if not (r.get("run_name") or "").startswith(PREP_RUN_PREFIX):
+        return None
+    status = job_status(r)
+    end = r.get("end_time") or int(time.time() * 1000)
+    return {"engine": "jobs", "status": status, "terminal": status in TERMINAL, "experiment_name": r.get("run_name"),
+            "dashboard_url": r.get("run_page_url"), "mlflow_url": None,
+            "duration_seconds": (end - r["start_time"]) // 1000 if r.get("start_time") else None,
+            "tasks": [{"key": t["task_key"], "run_id": str(t["run_id"]), "status": job_status(t)} for t in r.get("tasks", [])]}
+
+
+def job_logs(run: dict) -> str:
+    parts = []
+    for t in run["tasks"]:
+        parts.append(f"===== {t['key']}: {t['status']} =====")
+        if t["status"] in TERMINAL:
+            rc, out, err = run_cli(["jobs", "get-run-output", t["run_id"], "-o", "json"])
+            if rc == 0:
+                o = json.loads(out)
+                text = (o.get("logs") or "") + ("\n" + o["error"] if o.get("error") else "") + \
+                       ("\n" + o["error_trace"] if o.get("error_trace") else "")
+                parts.append(re.sub(r"\x1b\[[0-9;]*m", "", text).strip()[-6000:] or "(出力なし)")
+            else:
+                parts.append((err or out)[-1000:])
+        else:
+            parts.append("実行中です（タスクが終わるとログが表示されます）")
+    return "\n".join(parts)
+
+
 # ---- API ---------------------------------------------------------------------
 @app.get("/api/config")
 def config(request: Request):
@@ -182,7 +260,7 @@ def checks():
         for ds in ("gsm8k", "geo3k"):
             rc2, out2, _ = run_cli(["fs", "ls", f"dbfs:{VOL}/{ds}"])
             add(f"データ: {ds}", rc2 == 0 and "train.parquet" in out2,
-                "train/test.parquet あり" if rc2 == 0 and "train.parquet" in out2 else "未準備（データ準備ジョブを実行してください）")
+                "train/test.parquet あり" if rc2 == 0 and "train.parquet" in out2 else "未準備（「データ準備」を実行してください）")
     return results
 
 
@@ -199,6 +277,8 @@ def submit(kind: str, request: Request):
     if kind not in JOBS:
         raise HTTPException(404, detail=f"unknown job {kind}")
     email = user_email(request)
+    if JOBS[kind].get("engine") == "jobs":
+        return submit_prep(kind, email)
     wd = build_workdir(kind, email)
     try:
         rc, out, err = run_cli(["air", "run", "-f", JOBS[kind]["file"], "-o", "json"], timeout=600, cwd=wd)
@@ -215,10 +295,11 @@ def submit(kind: str, request: Request):
 @app.get("/api/runs")
 def list_runs():
     data = run_cli_json(["air", "list", "--all-status", "--limit", "20"])
-    runs = data.get("data", {}).get("runs", [])
+    runs = data.get("data", {}).get("runs", []) + list_prep_runs()
+    runs.sort(key=lambda r: r.get("started_at") or "", reverse=True)
     for r in runs:
         meta = SUBMITTED.get(r["run_id"], {})
-        r["kind"] = meta.get("kind")
+        r["kind"] = meta.get("kind") or r.get("kind")
         r["label"] = JOBS.get(meta.get("kind"), {}).get("label") or r.get("run_name")
         r["submitted_by"] = meta.get("submitted_by")
         r["terminal"] = r.get("status") in TERMINAL
@@ -227,6 +308,9 @@ def list_runs():
 
 @app.get("/api/runs/{run_id}")
 def get_run(run_id: str):
+    jr = get_job_run(run_id)
+    if jr:
+        return jr
     d = run_cli_json(["air", "get", run_id]).get("data", {})
     d["terminal"] = d.get("status") in TERMINAL
     return d
@@ -234,12 +318,16 @@ def get_run(run_id: str):
 
 @app.get("/api/runs/{run_id}/logs")
 def get_logs(run_id: str, n: int = 200):
+    jr = get_job_run(run_id)
+    if jr:
+        return {"text": job_logs(jr)}
     return {"text": tail_logs(run_id, max(10, min(n, 2000)))}
 
 
 @app.post("/api/runs/{run_id}/cancel")
 def cancel(run_id: str):
-    rc, out, err = run_cli(["air", "cancel", run_id])
+    cmd = ["jobs", "cancel-run", run_id, "--no-wait"] if get_job_run(run_id) else ["air", "cancel", run_id]
+    rc, out, err = run_cli(cmd)
     if rc != 0:
         raise HTTPException(502, detail=(err or out)[-1000:])
     return {"ok": True}

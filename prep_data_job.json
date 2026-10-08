@@ -1,0 +1,47 @@
+{
+  "run_name": "prep-data-gsm8k-geo3k",
+  "tasks": [
+    {
+      "task_key": "gsm8k",
+      "spark_python_task": {
+        "python_file": "/Workspace/Users/__WS_EMAIL__/air-handson/prep_data.py",
+        "parameters": [
+          "--dataset",
+          "gsm8k",
+          "--out",
+          "__VOL__/gsm8k"
+        ]
+      },
+      "environment_key": "cpu",
+      "max_retries": 0
+    },
+    {
+      "task_key": "geo3k",
+      "spark_python_task": {
+        "python_file": "/Workspace/Users/__WS_EMAIL__/air-handson/prep_data.py",
+        "parameters": [
+          "--dataset",
+          "geo3k",
+          "--out",
+          "__VOL__/geo3k"
+        ]
+      },
+      "environment_key": "cpu",
+      "max_retries": 0
+    }
+  ],
+  "environments": [
+    {
+      "environment_key": "cpu",
+      "spec": {
+        "environment_version": "4",
+        "dependencies": [
+          "datasets==3.6.0",
+          "fsspec==2025.3.0",
+          "huggingface_hub==0.34.4",
+          "pyarrow>=19.0.0"
+        ]
+      }
+    }
+  ]
+}

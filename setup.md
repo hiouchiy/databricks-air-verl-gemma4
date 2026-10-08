@@ -119,7 +119,7 @@ bash quickstart.sh
      イメージへの `READ VOLUME` 権限は必要）
    - `build`: Dockerfile からビルドして push する（§3-2。時間がかかる。macOS / Linux のみ）
 
-完了後、`gen/prep_gsm8k_deps.yaml` でデータを用意し、`gen/grpo_gemma4.yaml` /
+完了後、`gen/prep_data_job.json` でデータを用意し（CPU のサーバーレス Jobs・GPU 不要。§4-2）、`gen/grpo_gemma4.yaml` /
 `gen/grpo_gemma4_multinode.yaml` を `databricks air run` すれば学習できます（§4・§5）。
 （`databricks air` は `.yaml`/`.yml` のみ受け付けるため、置換結果は `*.yaml.gen` ではなく
 `gen/` サブディレクトリに元の拡張子で出力します。）
@@ -195,7 +195,8 @@ cd verl-gemma4
 | `grpo_gemma4_multinode.yaml` | 2ノード（16×H100）テキストの `databricks air` ジョブ定義 |
 | `grpo_gemma4_mm.yaml` | 単一ノード **マルチモーダル（画像）** の `databricks air` ジョブ定義（§6） |
 | `grpo_gemma4_mm_multinode.yaml` | 2ノード **マルチモーダル（画像）** の `databricks air` ジョブ定義（§6） |
-| `prep_gsm8k_deps.yaml` | 動作確認用の小さな学習データ（gsm8k, テキスト）を用意するジョブ |
+| `prep_data.py` / `prep_data_job.json` | 動作確認用の小さな学習データ（gsm8k テキスト + geo3k 画像）を用意するスクリプトと、CPU のサーバーレス Jobs の定義（§4-2。GPU 不要） |
+| `prep_gsm8k_deps.yaml` / `prep_geo3k_deps.yaml` | 同じデータを AI Runtime（1×A10）で用意する場合のジョブ定義（代替。通常は使わない） |
 | `smoke_test.yaml` / `smoke_test.py` | 依存疎通確認（1×A10、安価） |
 
 > **重要: リポジトリ直下の `*.yaml` / `run_grpo*.sh` はテンプレートです。直接実行しないでください。**
@@ -315,10 +316,13 @@ VOL="/Volumes/${CATALOG}/${SCHEMA}/${VOLUME}"        # §1-4 で作った Volume
 
 mkdir -p gen
 for t in grpo_gemma4.yaml grpo_gemma4_multinode.yaml grpo_gemma4_mm.yaml grpo_gemma4_mm_multinode.yaml \
-         smoke_test.yaml prep_gsm8k_deps.yaml prep_geo3k_deps.yaml run_grpo.sh run_grpo_multinode.sh; do
+         smoke_test.yaml prep_data_job.json prep_gsm8k_deps.yaml prep_geo3k_deps.yaml run_grpo.sh run_grpo_multinode.sh; do
   sed -e "s#__IMAGE__#${IMAGE}#g" -e "s#__VOL__#${VOL}#g" -e "s#__WS_EMAIL__#${EMAIL}#g" "$t" > "gen/$t"
 done
 grep -l -E "__IMAGE__|__VOL__|__WS_EMAIL__" gen/* || echo "OK: no placeholders left"
+# データ準備スクリプトをワークスペースにアップロード（§4-2 で使う）
+databricks workspace mkdirs "/Workspace/Users/${EMAIL}/air-handson" -p PROF
+databricks workspace import "/Workspace/Users/${EMAIL}/air-handson/prep_data.py" --file prep_data.py --format AUTO --overwrite -p PROF
 for y in gen/*.yaml; do databricks air run -f "$y" --dry-run -p PROF; done   # すべて "valid" と出ればよい
 ```
 - `OK: no placeholders left` と表示され、7つの YAML すべてで `is valid; not submitting.` と出れば完了です。
@@ -343,12 +347,24 @@ databricks air run --file gen/smoke_test.yaml -p PROF --watch
 ```
 → `SMOKE TEST: PASS`（torch / transformers / vllm / verl / gemma4 認識 が OK）を確認。
 
-### 4-2. 動作確認用データの準備（gsm8k, テキスト）
+### 4-2. 動作確認用データの準備（gsm8k テキスト + geo3k 画像。CPU・GPU 不要）
+データ準備は Hugging Face からデータセットを取得して parquet にするだけなので、**GPU は使いません**。
+**CPU のサーバーレス Jobs** で実行します（GPU が使えない状況でも、ここまでは進められます）。
 ```bash
-databricks air run --file gen/prep_gsm8k_deps.yaml -p PROF --watch
+# quickstart.sh または §3-4 を実行した場合、1) は実行済みです
+# 1) データ準備スクリプトをワークスペースにアップロード
+databricks workspace mkdirs /Workspace/Users/<自分のメール>/air-handson -p PROF
+databricks workspace import /Workspace/Users/<自分のメール>/air-handson/prep_data.py \
+  --file prep_data.py --format AUTO --overwrite -p PROF
+# 2) CPU のサーバーレス Jobs で実行（完了まで待ちます。約1分）
+databricks jobs submit --json @gen/prep_data_job.json -p PROF
 ```
-→ `$VOL/gsm8k/{train,test}.parquet`（64 train / 8 test の少量データ）が作られます。
-本番は実データに差し替えます（データ形式は verl の gsm8k 形式に準拠）。
+→ gsm8k と geo3k の2つのタスクが並列に動き、`$VOL/gsm8k/{train,test}.parquet` と `$VOL/geo3k/{train,test}.parquet`
+（それぞれ 64 train / 8 test の少量データ）が作られます。最後に `"result_state": "SUCCESS"` が表示されれば完了です。
+本番は実データに差し替えます（データ形式は verl の gsm8k / geo3k 形式に準拠。件数は `prep_data.py` の `MAXN`）。
+
+> AI Runtime（1×A10）で用意する従来の方法（`databricks air run --file gen/prep_gsm8k_deps.yaml` / `gen/prep_geo3k_deps.yaml`）も
+> 残してありますが、通常は不要です。作られるデータは同じです（両方式の出力が完全に一致することを確認済み）。
 
 > **なぜ gsm8k（テキスト）か**: verl 0.7.1 は Gemma4 の画像 processor（`Gemma4Processor`）に
 > 未対応で、画像入りデータ（geo3k 等）はメッセージ構築時に
@@ -365,7 +381,7 @@ databricks air run --file gen/grpo_gemma4.yaml -p PROF --watch
 `critic/rewards/mean`・`grad_norm` 等のメトリクスが出ます。
 
 本番学習への切り替え:
-- `prep_gsm8k_deps.yaml` の `MAXN` を増やす／実データに差し替え
+- `prep_data.py` の `MAXN` を増やす／実データに差し替え
 - `grpo_gemma4.yaml` の `parameters.total_training_steps` を増やす／エポック学習へ
 - `run_grpo.sh` の `train_batch_size` / `max_response_length` を本番規模へ
 
@@ -446,11 +462,8 @@ databricks air run --file gen/grpo_gemma4_multinode.yaml -p PROF --watch
    バッチ削減等が必要（下記 6-3）。
 
 ### 6-2. 実行（単ノード / マルチノード）
-まず画像入りデータ（verl の geo3k 形式、`images` 列を持つ parquet）を用意します。本リポの
-`prep_geo3k_deps.yaml` で小さな geo3k（64 train / 8 test）を Volume に作れます:
-```bash
-databricks air run --file gen/prep_geo3k_deps.yaml -p PROF --watch   # → $VOL/geo3k/{train,test}.parquet
-```
+画像入りデータ（verl の geo3k 形式、`images` 列を持つ parquet）は、§4-2 のデータ準備で gsm8k と一緒に
+`$VOL/geo3k/{train,test}.parquet`（64 train / 8 test）として作られています（CPU・GPU 不要）。
 その上で GRPO を実行します:
 ```bash
 # 単ノード（8×H100）
@@ -561,10 +574,13 @@ databricks air images push -p "$PROFILE" \
 # (3) gen/ に YAML とスクリプトを生成する（3つのプレースホルダを置き換える）
 mkdir -p gen
 for t in grpo_gemma4.yaml grpo_gemma4_multinode.yaml grpo_gemma4_mm.yaml grpo_gemma4_mm_multinode.yaml \
-         smoke_test.yaml prep_gsm8k_deps.yaml prep_geo3k_deps.yaml run_grpo.sh run_grpo_multinode.sh; do
+         smoke_test.yaml prep_data_job.json prep_gsm8k_deps.yaml prep_geo3k_deps.yaml run_grpo.sh run_grpo_multinode.sh; do
   sed -e "s#__IMAGE__#${IMAGE}#g" -e "s#__VOL__#${VOL}#g" -e "s#__WS_EMAIL__#${EMAIL}#g" "$t" > "gen/$t"
 done
 grep -l -E "__IMAGE__|__VOL__|__WS_EMAIL__" gen/* || echo "OK: no placeholders left"
+# データ準備スクリプトをワークスペースにアップロード（5) のデータ準備で使う）
+databricks workspace mkdirs "/Workspace/Users/${EMAIL}/air-handson" -p "$PROFILE"
+databricks workspace import "/Workspace/Users/${EMAIL}/air-handson/prep_data.py" --file prep_data.py --format AUTO --overwrite -p "$PROFILE"
 for y in gen/*.yaml; do databricks air run -f "$y" --dry-run -p "$PROFILE"; done   # すべて "valid" と出ればよい
 ```
 > 各 YAML のプレースホルダ（`__IMAGE__` / `__VOL__` / `__WS_EMAIL__`）を、エディタで直接書き換えても構いません。
@@ -573,7 +589,7 @@ for y in gen/*.yaml; do databricks air run -f "$y" --dry-run -p "$PROFILE"; done
 ```bash
 # 5) 学習ジョブ
 databricks air run --file gen/smoke_test.yaml -p handson --watch               # 疎通確認（任意、約5分）
-databricks air run --file gen/prep_gsm8k_deps.yaml -p handson --watch          # データ準備（約2〜3分）
+databricks jobs submit --json @gen/prep_data_job.json -p handson                # データ準備（CPU・GPU 不要・約1分）
 databricks air run --file gen/grpo_gemma4.yaml -p handson --watch              # 単一ノード（約27分）
 databricks air run --file gen/grpo_gemma4_multinode.yaml -p handson --watch    # 2ノード（約28分）
 
@@ -628,7 +644,7 @@ $token | .\crane.exe auth login $RegistryHost -u oauthtoken --password-stdin
 ```powershell
 # 5) 学習ジョブ
 databricks air run --file gen\smoke_test.yaml -p handson --watch               # 疎通確認（任意、約5分）
-databricks air run --file gen\prep_gsm8k_deps.yaml -p handson --watch          # データ準備（約2〜3分）
+databricks jobs submit --json '@gen\prep_data_job.json' -p handson              # データ準備（CPU・GPU 不要・約1分）
 databricks air run --file gen\grpo_gemma4.yaml -p handson --watch              # 単一ノード（約27分）
 databricks air run --file gen\grpo_gemma4_multinode.yaml -p handson --watch    # 2ノード（約28分）
 

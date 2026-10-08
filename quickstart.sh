@@ -92,7 +92,7 @@ databricks volumes create "${CATALOG}" "${SCHEMA}" "${VOLUME_NAME}" MANAGED -p "
 # マルチモーダル(§6)用の grpo_gemma4_mm*.yaml も含める。
 say "テンプレートを環境向けに置換 (gen/ に生成)"
 mkdir -p gen
-TEMPLATES="grpo_gemma4.yaml grpo_gemma4_multinode.yaml grpo_gemma4_mm.yaml grpo_gemma4_mm_multinode.yaml smoke_test.yaml prep_gsm8k_deps.yaml prep_geo3k_deps.yaml run_grpo.sh run_grpo_multinode.sh"
+TEMPLATES="grpo_gemma4.yaml grpo_gemma4_multinode.yaml grpo_gemma4_mm.yaml grpo_gemma4_mm_multinode.yaml smoke_test.yaml prep_data_job.json prep_gsm8k_deps.yaml prep_geo3k_deps.yaml run_grpo.sh run_grpo_multinode.sh"
 for t in ${TEMPLATES}; do
   [ -f "$t" ] || continue
   sed -e "s#__IMAGE__#${UC_IMAGE}#g" \
@@ -101,6 +101,12 @@ for t in ${TEMPLATES}; do
       "$t" > "gen/${t}"
   echo "  生成: gen/${t}"
 done
+
+# ---- 2b. データ準備スクリプトをワークスペースへ（CPU のサーバーレス Jobs で実行する。GPU 不要） ----
+PREP_DIR="/Workspace/Users/${WS_EMAIL}/air-handson"
+say "データ準備スクリプトをアップロード: ${PREP_DIR}/prep_data.py"
+databricks workspace mkdirs "${PREP_DIR}" -p "${PROFILE}"
+databricks workspace import "${PREP_DIR}/prep_data.py" --file prep_data.py --format AUTO --overwrite -p "${PROFILE}"
 
 # ---- 3. カスタムイメージをビルド → Artifact Registry へ push（1回で完結） ----
 # Gemma4 は SDPA を使うため FlashAttention は不要（BUILD_FLASH_ATTN=0）。
@@ -147,8 +153,8 @@ cat <<EOF
   # 疎通確認（任意・安価）
   databricks air run --file gen/smoke_test.yaml -p ${PROFILE} --watch
 
-  # 動作確認用データ（gsm8k, テキスト）の準備
-  databricks air run --file gen/prep_gsm8k_deps.yaml -p ${PROFILE} --watch
+  # 動作確認用データ（gsm8k テキスト + geo3k 画像）の準備（CPU のサーバーレス・GPU 不要・約1分）
+  databricks jobs submit --json @gen/prep_data_job.json -p ${PROFILE}
 
   # 単一ノード（8×H100）で GRPO
   databricks air run --file gen/grpo_gemma4.yaml -p ${PROFILE} --watch
