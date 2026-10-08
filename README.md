@@ -136,6 +136,12 @@ databricks air list -p "$PROFILE"            # Ctrl-C on --watch does NOT stop t
 databricks air cancel <RUN_ID> -p "$PROFILE"
 ```
 
+## Hands-on UI (Databricks App)
+`handson-app/` is a Databricks App that runs the same steps from a browser (checks → data prep →
+GRPO runs → status / logs / MLflow links → cancel). Deploy with
+`PROFILE=<PROFILE> CATALOG=<catalog> SCHEMA=<schema> bash handson-app/deploy.sh` — see
+[handson-app/README.md](handson-app/README.md) (JA). Jobs run as the app's service principal.
+
 ## Files
 | file | role |
 |---|---|
