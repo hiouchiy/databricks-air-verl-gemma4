@@ -115,10 +115,13 @@ databricks air images push -p "$PROFILE" \
 # 3) Generate gen/ (replace the 3 placeholders __IMAGE__ / __VOL__ / __WS_EMAIL__)
 mkdir -p gen
 for t in grpo_gemma4.yaml grpo_gemma4_multinode.yaml grpo_gemma4_mm.yaml grpo_gemma4_mm_multinode.yaml \
-         smoke_test.yaml prep_gsm8k_deps.yaml prep_geo3k_deps.yaml run_grpo.sh run_grpo_multinode.sh; do
+         smoke_test.yaml prep_data_job.json prep_gsm8k_deps.yaml prep_geo3k_deps.yaml run_grpo.sh run_grpo_multinode.sh; do
   sed -e "s#__IMAGE__#${IMAGE}#g" -e "s#__VOL__#${VOL}#g" -e "s#__WS_EMAIL__#${EMAIL}#g" "$t" > "gen/$t"
 done
 grep -l -E "__IMAGE__|__VOL__|__WS_EMAIL__" gen/* || echo "OK: no placeholders left"
+# data-prep script for the CPU serverless job (quickstart.sh does this for you)
+databricks workspace mkdirs "/Workspace/Users/${EMAIL}/air-handson" -p "$PROFILE"
+databricks workspace import "/Workspace/Users/${EMAIL}/air-handson/prep_data.py" --file prep_data.py --format AUTO --overwrite -p "$PROFILE"
 for y in gen/*.yaml; do databricks air run -f "$y" --dry-run -p "$PROFILE"; done   # all should be "valid"
 ```
 (You can also edit the placeholders in each YAML by hand — keep the generated files in `gen/`
@@ -129,7 +132,7 @@ together with `gen/run_grpo*.sh`, since the training YAMLs upload the script nex
 > placeholders; running them directly fails (e.g. `Error: Folder Users is protected`).
 ```bash
 databricks air run --file gen/smoke_test.yaml -p "$PROFILE" --watch              # optional, ~5 min (1xA10)
-databricks air run --file gen/prep_gsm8k_deps.yaml -p "$PROFILE" --watch         # data, ~2-3 min (1xA10)
+databricks jobs submit --json @gen/prep_data_job.json -p "$PROFILE"               # data (gsm8k + geo3k), CPU serverless, no GPU, ~1 min
 databricks air run --file gen/grpo_gemma4.yaml -p "$PROFILE" --watch             # 1 node 8xH100, ~27 min
 databricks air run --file gen/grpo_gemma4_multinode.yaml -p "$PROFILE" --watch   # 2 nodes 16xH100, ~28 min
 databricks air list -p "$PROFILE"            # Ctrl-C on --watch does NOT stop the job
@@ -156,5 +159,6 @@ GRPO runs → status / logs / MLflow links → cancel). Deploy with
 | `grpo_gemma4_mm_multinode.yaml` | `databricks air` workload: 2-node **multimodal (image)** GRPO (setup.md §6) |
 | `run_grpo.sh` | verl GRPO launcher, single node (Gemma4 fixes: fsdp patch, SDPA, nccl_timeout) |
 | `run_grpo_multinode.sh` | verl GRPO launcher, multi-node (Ray cluster orchestration) |
-| `prep_gsm8k_deps.yaml` | tiny text-only gsm8k data prep (base env, no image) |
+| `prep_data.py` / `prep_data_job.json` | tiny gsm8k (text) + geo3k (image) data prep as a **CPU serverless job** (no GPU) |
+| `prep_gsm8k_deps.yaml` / `prep_geo3k_deps.yaml` | the same data prep on AI Runtime 1xA10 (alternative; not needed normally) |
 | `smoke_test.yaml` / `smoke_test.py` | 1×A10 import/arch check via the image |

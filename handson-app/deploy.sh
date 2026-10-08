@@ -50,14 +50,15 @@ say "サービスプリンシパルに UC の権限を付与"
   --json "{\"changes\":[{\"principal\":\"$SP\",\"add\":[\"USE_SCHEMA\",\"READ_VOLUME\",\"WRITE_VOLUME\",\"CREATE_VOLUME\"]}]}" >/dev/null
 echo "  $CATALOG: USE_CATALOG / $CATALOG.$SCHEMA: USE_SCHEMA, READ_VOLUME, WRITE_VOLUME, CREATE_VOLUME"
 
-say "MLflow 実験フォルダ $EXPERIMENT_DIR を用意"
+say "共有フォルダ $EXPERIMENT_DIR を用意（MLflow 実験とデータ準備スクリプト）"
 "${DB[@]}" workspace mkdirs "$EXPERIMENT_DIR"
+"${DB[@]}" workspace import "$EXPERIMENT_DIR/prep_data.py" --file "$REPO/prep_data.py" --format AUTO --overwrite
 
 say "ビルド（テンプレートのコピーと app.yaml の生成）"
 rm -rf "$BUILD" && mkdir -p "$BUILD/templates"
 cp "$HERE/app.py" "$BUILD/"
 cp -R "$HERE/static" "$BUILD/"
-for t in smoke_test.yaml prep_gsm8k_deps.yaml prep_geo3k_deps.yaml grpo_gemma4.yaml grpo_gemma4_multinode.yaml \
+for t in smoke_test.yaml prep_data_job.json grpo_gemma4.yaml grpo_gemma4_multinode.yaml \
          grpo_gemma4_mm.yaml grpo_gemma4_mm_multinode.yaml run_grpo.sh run_grpo_multinode.sh; do
   cp "$REPO/$t" "$BUILD/templates/"
 done

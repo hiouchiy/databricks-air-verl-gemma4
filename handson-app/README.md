@@ -6,7 +6,7 @@ Databricks App です。講師が画面を見せながら操作するデモ用�
 ## できること
 1. **前提チェック**：Databricks CLI、アプリの実行 ID、学習用イメージ（Artifact Registry のタグ・ダイジェスト・
    アクセラレーションの状態）、データ用 Volume、データ（gsm8k / geo3k）の有無を一覧で確認
-2. **準備**：疎通確認（1×A10）、データ準備（gsm8k / geo3k）をボタンで投入。Volume の作成もボタンで
+2. **準備**：データ準備（gsm8k + geo3k。**CPU のサーバーレス Jobs なので GPU 不要**）、疎通確認（1×A10）をボタンで投入。Volume の作成もボタンで
 3. **学習**：GRPO テキスト / 画像 × 単一ノード / 2ノードをボタンで投入
 4. **実行状況**：ジョブの一覧（状態・開始時刻・投入者）、ジョブ実行画面と MLflow へのリンク、経過時間、
    5秒ごとに更新されるログ、**停止ボタン**（GPU の課金を止める）
@@ -18,7 +18,8 @@ Databricks App です。講師が画面を見せながら操作するデモ用�
 - **ジョブはアプリのサービスプリンシパル（SP）の権限で投入されます。** Databricks Apps の
   「ユーザーの代理で実行する」機能のスコープには、Jobs / MLflow / AI Runtime の API が含まれないためです。
   代わりに、各ジョブに `permissions` で、画面を操作した人の `CAN_MANAGE` を付けています。
-- MLflow の実験は `/Workspace/Shared/air-handson/` に作られます（全員が開けるように）。
+- MLflow の実験は `/Workspace/Shared/air-handson/` に作られます（全員が開けるように）。データ準備のスクリプト
+  `prep_data.py` も `deploy.sh` がここに置き、CPU のサーバーレス Jobs として実行します（GPU が使えないときでも動きます）。
 - ログは `air logs --tail` で取得します（`--download-to` は、サーバーレス環境から MLflow のファイル置き場に
   接続できないため、アプリの中では使えません。完全なログは MLflow のリンクから見られます）。
 
