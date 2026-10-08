@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gemma 4 × verl GRPO ハンズオン</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Gemma 4 × verl GRPO ハンズオン</h1>
+      <p class="sub">Databricks AI Runtime（サーバーレス GPU）で強化学習（GRPO）を動かします</p>
+    </div>
+    <div id="who" class="who"></div>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2><span class="step">1</span>前提チェック</h2>
+      <p class="hint">学習用イメージ・データ置き場・データが揃っているかを確認します。</p>
+      <div class="row">
+        <button id="btn-check" class="secondary">再チェック</button>
+        <button id="btn-volume" class="secondary">Volume を作成</button>
+      </div>
+      <table id="checks" class="checks"><tbody><tr><td class="muted">確認中…</td></tr></tbody></table>
+      <details class="cfg"><summary>この環境の設定</summary><pre id="cfg"></pre></details>
+    </section>
+
+    <section class="card">
+      <h2><span class="step">2</span>準備（1×A10・数分）</h2>
+      <p class="hint">最初に一度だけ実行します。データ準備が終わると、前提チェックの「データ」が ✅ になります。</p>
+      <div id="prep-buttons" class="buttons"></div>
+    </section>
+
+    <section class="card">
+      <h2><span class="step">3</span>学習（GRPO）</h2>
+      <p class="hint">まずは <b>テキスト 単一ノード</b>（約27分）から。2ノード版は 8×H100 を2台使います。
+        終わったら必ずジョブが自動で終了します。途中でやめる場合は「停止」を押してください（GPU の課金が止まります）。</p>
+      <div id="train-buttons" class="buttons"></div>
+    </section>
+
+    <section class="card">
+      <h2><span class="step">4</span>実行状況</h2>
+      <div class="row"><button id="btn-refresh" class="secondary">更新</button><span id="runs-updated" class="muted"></span></div>
+      <table id="runs" class="runs">
+        <thead><tr><th>ジョブ</th><th>状態</th><th>開始</th><th>リンク</th><th></th></tr></thead>
+        <tbody><tr><td colspan="5" class="muted">読み込み中…</td></tr></tbody>
+      </table>
+      <div id="detail" class="detail hidden">
+        <div class="row">
+          <h3 id="detail-title"></h3>
+          <span id="detail-status" class="badge"></span>
+          <label class="muted"><input type="checkbox" id="auto" checked> 5秒ごとに自動更新</label>
+        </div>
+        <div id="detail-links" class="links"></div>
+        <pre id="logs" class="logs">ログを読み込み中…</pre>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
