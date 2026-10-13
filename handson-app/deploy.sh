@@ -24,6 +24,8 @@ VOLUME="${VOLUME:-air_handson}"
 IMAGE_NAME="${IMAGE_NAME:-verl-gemma4}"
 IMAGE_TAG="${IMAGE_TAG:-v1}"
 EXPERIMENT_DIR="${EXPERIMENT_DIR:-/Workspace/Shared/air-handson}"
+LLM_ENDPOINT="${LLM_ENDPOINT:-databricks-claude-sonnet-5-5}"   # reward agent (「自分のデータで学習」)
+SKILL_ID="${SKILL_ID:-grpo-reward-author}"                      # UC skill published to $CATALOG.$SCHEMA
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(dirname "$HERE")"
@@ -37,8 +39,11 @@ say "前提チェック"
 ME=$("${DB[@]}" current-user me -o json | python3 -c "import json,sys;print(json.load(sys.stdin)['userName'])")
 
 say "アプリ $APP_NAME を用意"
+RESOURCES="[{\"name\":\"llm\",\"serving_endpoint\":{\"name\":\"$LLM_ENDPOINT\",\"permission\":\"CAN_QUERY\"}}]"
 if ! "${DB[@]}" apps get "$APP_NAME" >/dev/null 2>&1; then
-  "${DB[@]}" apps create "$APP_NAME" --description "Gemma 4 x verl GRPO hands-on (AI Runtime)" >/dev/null
+  "${DB[@]}" apps create --json "{\"name\":\"$APP_NAME\",\"description\":\"Gemma 4 x verl GRPO hands-on (AI Runtime)\",\"resources\":$RESOURCES}" >/dev/null
+else
+  "${DB[@]}" apps update "$APP_NAME" --json "{\"name\":\"$APP_NAME\",\"resources\":$RESOURCES}" >/dev/null
 fi
 SP=$("${DB[@]}" apps get "$APP_NAME" -o json | python3 -c "import json,sys;print(json.load(sys.stdin)['service_principal_client_id'])")
 echo "  service principal: $SP"
@@ -52,14 +57,33 @@ echo "  $CATALOG: USE_CATALOG / $CATALOG.$SCHEMA: USE_SCHEMA, READ_VOLUME, WRITE
 
 say "共有フォルダ $EXPERIMENT_DIR を用意（MLflow 実験とデータ準備スクリプト）"
 "${DB[@]}" workspace mkdirs "$EXPERIMENT_DIR"
-"${DB[@]}" workspace import "$EXPERIMENT_DIR/prep_data.py" --file "$REPO/prep_data.py" --format AUTO --overwrite
+for f in prep_data.py prep_custom.py make_sample_raw.py; do
+  "${DB[@]}" workspace import "$EXPERIMENT_DIR/$f" --file "$REPO/$f" --format AUTO --overwrite
+done
+
+say "採点関数エージェントのスキルを Unity Catalog に公開: $CATALOG.$SCHEMA.$SKILL_ID"
+SKILL_DIR="$HERE/skills/$SKILL_ID"
+"${DB[@]}" api post "/api/2.1/unity-catalog/skills?parent=schemas/$CATALOG.$SCHEMA&skill_id=$SKILL_ID" \
+  --json '{"comment":"Writes and tests GRPO reward (scoring) functions for verl custom datasets"}' >/dev/null 2>&1 || true
+TOKEN=$("${DB[@]}" auth token -o json | python3 -c "import json,sys;print(json.load(sys.stdin)['access_token'])")
+HOST=$("${DB[@]}" auth describe 2>/dev/null | awk '/^Host:/{print $2}')
+for f in "$SKILL_DIR"/*; do
+  [ -f "$f" ] || continue   # skip __pycache__ etc.
+  code=$(curl -s -o /dev/null -w "%{http_code}" -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/octet-stream" \
+    --data-binary @"$f" "$HOST/api/2.0/fs/files/Skills/$CATALOG/$SCHEMA/$SKILL_ID/$(basename "$f")?overwrite=true")
+  [ "$code" = "204" ] || [ "$code" = "200" ] || { echo "  upload $(basename "$f") failed ($code)"; exit 1; }
+done
+"${DB[@]}" api post "/api/2.1/unity-catalog/skills/$CATALOG.$SCHEMA.$SKILL_ID/finalize" --json '{}' >/dev/null
+echo "  published ($(find "$SKILL_DIR" -maxdepth 1 -type f | wc -l | tr -d ' ') files)"
 
 say "ビルド（テンプレートのコピーと app.yaml の生成）"
 rm -rf "$BUILD" && mkdir -p "$BUILD/templates"
-cp "$HERE/app.py" "$BUILD/"
+cp "$HERE/app.py" "$HERE/custom_flow.py" "$HERE/reward_agent.py" "$HERE/requirements.txt" "$BUILD/"
 cp -R "$HERE/static" "$BUILD/"
 for t in smoke_test.yaml prep_data_job.json grpo_gemma4.yaml grpo_gemma4_multinode.yaml \
-         grpo_gemma4_mm.yaml grpo_gemma4_mm_multinode.yaml run_grpo.sh run_grpo_multinode.sh; do
+         grpo_gemma4_mm.yaml grpo_gemma4_mm_multinode.yaml run_grpo.sh run_grpo_multinode.sh \
+         grpo_gemma4_custom.yaml grpo_gemma4_custom_multinode.yaml grpo_gemma4_mm_custom.yaml \
+         grpo_gemma4_mm_custom_multinode.yaml custom_sample_raw_job.json custom_reward.py; do
   cp "$REPO/$t" "$BUILD/templates/"
 done
 cat > "$BUILD/app.yaml" <<EOF
@@ -77,6 +101,10 @@ env:
     value: "$IMAGE_TAG"
   - name: AIR_EXPERIMENT_DIR
     value: "$EXPERIMENT_DIR"
+  - name: AIR_LLM_ENDPOINT
+    value: "$LLM_ENDPOINT"
+  - name: AIR_SKILL
+    value: "$CATALOG.$SCHEMA.$SKILL_ID"
 EOF
 
 say "アップロードしてデプロイ"

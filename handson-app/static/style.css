@@ -48,3 +48,18 @@ a { color: var(--run); text-decoration: none; } a:hover { text-decoration: under
 .toast { position: fixed; right: 20px; bottom: 20px; max-width: 520px; background: #1b1f24; color: #fff;
          padding: 12px 16px; border-radius: 8px; white-space: pre-wrap; font-size: 13px; box-shadow: 0 6px 24px rgba(0,0,0,.2); }
 .toast.err { background: #8c1d18; }
+
+.tabs { max-width: 1100px; margin: 16px auto 0; padding: 0 16px; display: flex; gap: 6px; }
+.tab { background: #e6e9ee; color: var(--ink); border-radius: 8px 8px 0 0; }
+.tab.active { background: var(--brand); color: #fff; }
+input, select, textarea { font: inherit; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+.wide { flex: 1; min-width: 320px; width: 100%; }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(260px, 1fr)); gap: 10px 16px; margin: 10px 0; }
+.grid label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.grid .span2 { grid-column: span 2; }
+textarea.code { font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
+table.small td, table.small th { font-size: 12px; padding: 5px 6px; }
+.logs.short { height: 140px; }
+.pass { color: var(--ok); font-weight: 600; } .fail { color: var(--ng); font-weight: 600; }
+.answer { white-space: pre-wrap; word-break: break-word; max-width: 560px; font: 11px/1.4 ui-monospace, Menlo, monospace; }
+.small-btn { padding: 5px 10px; font-size: 12px; }

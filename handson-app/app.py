@@ -56,7 +56,7 @@ JOBS = {
 }
 SCRIPTS = ["run_grpo.sh", "run_grpo_multinode.sh"]
 PREP_SCRIPT = f"{EXPERIMENT_DIR}/prep_data.py"   # uploaded by deploy.sh
-PREP_RUN_PREFIX = "prep-data"
+PREP_RUN_PREFIX = ("prep-data", "custom-prep", "custom-sample-raw")   # serverless CPU jobs
 TERMINAL = {"SUCCESS", "FAILED", "CANCELED", "CANCELLED", "TIMEDOUT", "TIMED_OUT", "INTERNAL_ERROR", "SKIPPED"}
 
 # run_id -> {"kind", "submitted_by", "submitted_at"}; in-memory, lost on app restart.
@@ -172,9 +172,13 @@ def list_prep_runs() -> list[dict]:
         return []
     d = json.loads(out)
     runs = d if isinstance(d, list) else d.get("runs", [])
-    return [{"run_id": str(r["run_id"]), "run_name": r.get("run_name"), "status": job_status(r),
+    out = [{"run_id": str(r["run_id"]), "run_name": r.get("run_name"), "status": job_status(r),
              "started_at": iso(r.get("start_time")), "kind": "prep_data", "engine": "jobs"}
             for r in runs if (r.get("run_name") or "").startswith(PREP_RUN_PREFIX)]
+    for r in out:
+        if not r["run_name"].startswith("prep-data"):
+            r["kind"] = "custom_prep" if r["run_name"].startswith("custom-prep") else "custom_sample_raw"
+    return out
 
 
 def get_job_run(run_id: str) -> dict | None:
@@ -261,6 +265,18 @@ def checks():
             rc2, out2, _ = run_cli(["fs", "ls", f"dbfs:{VOL}/{ds}"])
             add(f"データ: {ds}", rc2 == 0 and "train.parquet" in out2,
                 "train/test.parquet あり" if rc2 == 0 and "train.parquet" in out2 else "未準備（「データ準備」を実行してください）")
+    # for 「自分のデータで学習」: the reward-agent skill (UC) and the LLM endpoint
+    import custom_flow, reward_agent
+    try:
+        files = reward_agent.skill_files(custom_flow.SKILL)
+        add("採点関数エージェントのスキル（UC）", True, f"{custom_flow.SKILL}（{len(files)} ファイル）")
+    except Exception as e:
+        add("採点関数エージェントのスキル（UC）", False, str(e)[:300])
+    try:
+        add("LLM（Foundation Model API）", "OK" in reward_agent.llm([{"role": "user", "content": "Reply with exactly: OK"}], 20),
+            reward_agent.LLM)
+    except Exception as e:
+        add("LLM（Foundation Model API）", False, str(e)[:300])
     return results
 
 
@@ -300,7 +316,10 @@ def list_runs():
     for r in runs:
         meta = SUBMITTED.get(r["run_id"], {})
         r["kind"] = meta.get("kind") or r.get("kind")
-        r["label"] = JOBS.get(meta.get("kind"), {}).get("label") or r.get("run_name")
+        r["label"] = meta.get("label") or JOBS.get(meta.get("kind") or r.get("kind"), {}).get("label") or {
+            "custom_prep": f"独自データの変換: {(r.get('run_name') or '').removeprefix('custom-prep-')}（CPU）",
+            "custom_sample_raw": "サンプルの生データ作成（CPU）"}.get(r.get("kind")) or r.get("run_name")
+        r["experiment"] = meta.get("experiment") or (r.get("run_name") if (r.get("run_name") or "").startswith("custom-") and r.get("kind") is None else None)
         r["submitted_by"] = meta.get("submitted_by")
         r["terminal"] = r.get("status") in TERMINAL
     return runs
@@ -333,6 +352,9 @@ def cancel(run_id: str):
     return {"ok": True}
 
 
+import custom_flow  # noqa: E402  (「自分のデータで学習」 API; imports this module as `app`)
+
+app.include_router(custom_flow.router)
 app.mount("/static", StaticFiles(directory=os.path.join(HERE, "static")), name="static")
 
 

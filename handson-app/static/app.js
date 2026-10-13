@@ -80,13 +80,14 @@ async function loadRuns() {
         <td><span class="badge ${escapeHtml(r.status)}">${escapeHtml(r.status)}</span></td>
         <td>${fmtTime(r.started_at)}</td>
         <td><a href="${escapeHtml(CFG.host)}/jobs/runs/${escapeHtml(r.run_id)}" target="_blank">ジョブ</a></td>
-        <td>${r.terminal ? "" : `<button class="danger" data-cancel="${escapeHtml(r.run_id)}">停止</button>`}</td>
+        <td>${r.experiment ? `<button class="secondary small-btn" data-roll="${escapeHtml(r.experiment)}">回答と点数</button> ` : ""}${r.terminal ? "" : `<button class="danger" data-cancel="${escapeHtml(r.run_id)}">停止</button>`}</td>
       </tr>`).join("");
     tb.querySelectorAll("tr[data-id]").forEach((tr) => tr.addEventListener("click", (ev) => {
       if (ev.target.closest("a,button")) return;
       selected = tr.dataset.id; loadRuns(); loadDetail();
     }));
     tb.querySelectorAll("button[data-cancel]").forEach((b) => b.addEventListener("click", () => cancel(b.dataset.cancel)));
+    tb.querySelectorAll("button[data-roll]").forEach((b) => b.addEventListener("click", () => showRollouts(b.dataset.roll)));
     if (selected) loadDetail();
   } catch (e) {
     toast(`ジョブ一覧の取得に失敗しました: ${e.message}`, true);
@@ -134,6 +135,12 @@ async function main() {
   $("#who").innerHTML = `ログイン中: ${escapeHtml(CFG.user || "不明")}<br>実行 ID（SP）: ${escapeHtml(CFG.service_principal)}`;
   $("#cfg").textContent = JSON.stringify({ image: CFG.image, volume: CFG.volume, mlflow: CFG.experiment_dir }, null, 2);
   renderButtons();
+  document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach((x) => x.classList.toggle("active", x === t));
+    $("#tab-sample").classList.toggle("hidden", t.dataset.tab !== "sample");
+    $("#tab-custom").classList.toggle("hidden", t.dataset.tab !== "custom");
+    if (t.dataset.tab === "custom") initCustom();
+  }));
   $("#btn-check").addEventListener("click", loadChecks);
   $("#btn-refresh").addEventListener("click", loadRuns);
   $("#btn-volume").addEventListener("click", async () => {

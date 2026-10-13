@@ -15,7 +15,13 @@
     <div id="who" class="who"></div>
   </header>
 
+  <nav class="tabs">
+    <button class="tab active" data-tab="sample">サンプルで学習（gsm8k / geo3k）</button>
+    <button class="tab" data-tab="custom">自分のデータで学習</button>
+  </nav>
+
   <main>
+    <div id="tab-sample">
     <section class="card">
       <h2><span class="step">1</span>前提チェック</h2>
       <p class="hint">学習用イメージ・データ置き場・データが揃っているかを確認します。</p>
@@ -40,9 +46,78 @@
         終わったら必ずジョブが自動で終了します。途中でやめる場合は「停止」を押してください（GPU の課金が止まります）。</p>
       <div id="train-buttons" class="buttons"></div>
     </section>
+    </div>
+
+    <div id="tab-custom" class="hidden">
+    <section class="card">
+      <h2><span class="step">A</span>データを指定する</h2>
+      <p class="hint">Volume に置いた CSV / JSONL を指定します（1行 = 1問。<b>質問</b>と<b>正解</b>の列が必須、画像を使う場合は画像ファイルのパスの列）。
+        正解は、数値・選択肢・短い語句のように<b>短く1つに決まるもの</b>を想定しています。試すだけなら「サンプルの生データを作る」で練習用のデータを用意できます（CPU・約1分）。</p>
+      <div class="row">
+        <input id="c-path" class="wide" placeholder="/Volumes/<catalog>/<schema>/<volume>/raw/text/questions.csv">
+        <button id="c-inspect">読み込む</button>
+        <button id="c-sample" class="secondary">サンプルの生データを作る</button>
+      </div>
+      <div id="c-sample-paths" class="muted"></div>
+      <div id="c-inspect-out" class="hidden">
+        <div class="grid">
+          <label>質問の列 <select id="c-qcol"></select></label>
+          <label>正解の列 <select id="c-acol"></select></label>
+          <label>画像の列（任意） <select id="c-icol"></select></label>
+          <label>データの名前 <input id="c-name" placeholder="例: my-geometry"></label>
+        </div>
+        <details><summary class="muted">詳細設定</summary>
+          <div class="grid">
+            <label class="span2">質問の後ろに付ける指示文 <input id="c-instr" class="wide"></label>
+            <label class="span2">画像の相対パスの基準フォルダ <input id="c-imgdir" class="wide"></label>
+          </div>
+        </details>
+        <div class="row"><button id="c-preview" class="secondary">変換結果をプレビュー</button>
+          <button id="c-convert">変換する（CPU）</button></div>
+        <table id="c-head" class="small"></table>
+        <div id="c-preview-out"></div>
+      </div>
+    </section>
 
     <section class="card">
-      <h2><span class="step">4</span>実行状況</h2>
+      <h2><span class="step">B</span>変換済みのデータを選ぶ</h2>
+      <div class="row"><select id="c-dataset" class="wide"></select><button id="c-ds-refresh" class="secondary">更新</button></div>
+      <div id="c-ds-info" class="muted"></div>
+    </section>
+
+    <section class="card">
+      <h2><span class="step">C</span>採点関数を決める</h2>
+      <p class="hint">GRPO はモデルの答えに付けた<b>点数だけ</b>を手がかりに学習するので、採点のしかたが学習の方向を決めます。
+        型から選ぶか、採点の基準を書いてエージェント（UC のスキル + Claude + Sandbox）に作ってもらいます。<b>最後に人が確認・承認したものだけ</b>が学習に使われます。</p>
+      <div class="row">
+        <select id="c-preset"></select><button id="c-use-preset" class="secondary">この型を使う</button>
+      </div>
+      <div class="row">
+        <textarea id="c-criteria" rows="3" class="wide" placeholder="採点の基準（例：答えは角度の数値。度の記号は無視。0.1 までの誤差は正解。部分点なし）"></textarea>
+        <button id="c-agent">エージェントに作ってもらう</button>
+      </div>
+      <pre id="c-agent-log" class="logs short hidden"></pre>
+      <div id="c-reward-box" class="hidden">
+        <label class="muted">採点関数（custom_reward.py・編集できます）</label>
+        <textarea id="c-code" rows="16" class="code wide"></textarea>
+        <div id="c-tests"></div>
+        <div class="row">
+          <button id="c-trial" class="secondary">試し採点（Claude に問題を解かせて採点）</button>
+          <button id="c-approve">この採点関数を承認する</button>
+        </div>
+        <div id="c-trial-out"></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2><span class="step">D</span>学習する</h2>
+      <p class="hint">承認した採点関数で GRPO を実行します。学習中の「回答・正解・点数」は、下の実行状況の「回答と点数」から見られます。</p>
+      <div class="row"><button id="c-train-1">単一ノード（8×H100）</button><button id="c-train-2">2ノード（8×H100 ×2）</button></div>
+    </section>
+    </div>
+
+    <section class="card">
+      <h2><span class="step">◎</span>実行状況</h2>
       <div class="row"><button id="btn-refresh" class="secondary">更新</button><span id="runs-updated" class="muted"></span></div>
       <table id="runs" class="runs">
         <thead><tr><th>ジョブ</th><th>状態</th><th>開始</th><th>リンク</th><th></th></tr></thead>
@@ -57,10 +132,17 @@
         <div id="detail-links" class="links"></div>
         <pre id="logs" class="logs">ログを読み込み中…</pre>
       </div>
+      <div id="rollouts" class="hidden">
+        <div class="row"><h3>回答と点数</h3><select id="r-step"></select><select id="r-filter">
+          <option value="all">すべて</option><option value="0">0点のみ</option><option value="1">満点のみ</option></select>
+          <span id="r-summary" class="muted"></span></div>
+        <table id="r-table" class="small"></table>
+      </div>
     </section>
   </main>
 
   <div id="toast" class="toast hidden"></div>
   <script src="/static/app.js"></script>
+  <script src="/static/custom.js"></script>
 </body>
 </html>
