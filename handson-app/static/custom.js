@@ -96,7 +96,7 @@ function progressView(el, title) {
         running ? `<span class="dim">（待機中）</span> <span class="cursor"></span>` : "");
     term.scrollTop = term.scrollHeight;
     const total = fmt(Date.now() - t0);
-    sum.textContent = running ? `⏳ ${title}（${total}）` : `${title} の記録（クリックで開閉）`;
+    sum.textContent = running ? `${title}（${total}）` : `${title} の記録（クリックで開閉）`;
   }
   ticker = setInterval(render, 250);
   setTimeout(sandboxBadge, 1500);
@@ -175,16 +175,16 @@ async function makeSample() {
   $("#c-sample").disabled = true;
   try {
     const r = await post("/api/custom/sample-raw", { kind });
-    const done = await waitRun(r.run_id, (x) => status("#w1-status", `⏳ サンプルデータを作成中…（${x.status}）`));
+    const done = await waitRun(r.run_id, (x) => status("#w1-status", `サンプルデータを作成中…（${x.status}）`));
     if (done.status !== "SUCCESS") throw new Error(`作成ジョブが ${done.status} で終わりました`);
     $("#c-name").value = `sample-${kind}`;
     await load(r.path);
-  } catch (e) { status("#w1-status", `❌ ${escapeHtml(e.message)}`, "fail"); }
+  } catch (e) { status("#w1-status", `✕ ${escapeHtml(e.message)}`, "fail"); }
   finally { $("#c-sample").disabled = false; }
 }
 
 async function load(path) {
-  status("#w1-status", "⏳ 読み込み中…");
+  status("#w1-status", "読み込み中…");
   try {
     const r = await post("/api/custom/inspect", { path });
     W.path = path; W.cols = r.columns;
@@ -194,12 +194,12 @@ async function load(path) {
     if (!$("#c-name").value) $("#c-name").value = path.split("/").slice(-2, -1)[0] || "mydata";
     $("#c-imgdir").value = path.split("/").slice(0, -1).join("/");
     const n = r.n_rows != null ? `${r.n_rows} 問` : `${r.n_rows_at_least} 問以上`;
-    status("#w1-status", `✅ ${escapeHtml(path)} を読み込みました（${n}）`, "pass");
+    status("#w1-status", `✓ ${escapeHtml(path)} を読み込みました（${n}）`, "pass");
     $("#c-loaded").textContent = `${n}を読み込みました。項目：${r.columns.join(" / ")}`;
     if (!r.guess.question_col || !r.guess.answer_col) $("#c-mapping").open = true;
     unlock(2);
     preview();
-  } catch (e) { status("#w1-status", `❌ 読み込めませんでした：${escapeHtml(e.message)}`, "fail"); }
+  } catch (e) { status("#w1-status", `✕ 読み込めませんでした：${escapeHtml(e.message)}`, "fail"); }
 }
 
 let DATASETS = [];
@@ -214,8 +214,8 @@ async function useExisting() {
   const d = DATASETS.find((x) => x.name === $("#c-dataset").value);
   if (!d) return;
   W.name = d.name; W.hasImages = d.has_images;
-  status("#w1-status", `✅ 「${escapeHtml(d.name)}」を使います（変換済み）`, "pass");
-  status("#w2-status", "✅ 変換済みのため、この手順は不要です", "pass");
+  status("#w1-status", `✓ 「${escapeHtml(d.name)}」を使います（変換済み）`, "pass");
+  status("#w2-status", "✓ 変換済みのため、この手順は不要です", "pass");
   $("#w2-body").classList.add("hidden");
   unlock(3);
   if (d.reward_approved) {
@@ -240,7 +240,7 @@ async function preview() {
     const r = await post("/api/custom/preview", mapping());
     $("#c-preview-out").innerHTML = `<table class="small"><tr><th>モデルへの入力（${r.has_images ? "画像＋文章" : "文章"}）</th><th>正解</th>${r.has_images ? "<th>画像</th>" : ""}</tr>` +
       r.rows.map((x) => `<tr><td class="answer">${escapeHtml(x.prompt)}</td><td>${escapeHtml(x.ground_truth)}</td>${r.has_images ? `<td>${
-        x.images.map((p, i) => `${x.images_found[i] ? "✅" : "❌ 見つかりません"} ${escapeHtml(p.split("/").pop())}`).join("<br>")}</td>` : ""}</tr>`).join("") + "</table>";
+        x.images.map((p, i) => `${x.images_found[i] ? "✓" : "✕ 見つかりません"} ${escapeHtml(p.split("/").pop())}`).join("<br>")}</td>` : ""}</tr>`).join("") + "</table>";
   } catch (e) { $("#c-preview-out").textContent = `表示できません：${e.message}`; }
 }
 
@@ -250,11 +250,11 @@ async function convert() {
   try {
     const r = await post("/api/custom/convert", m);
     W.name = r.name; W.hasImages = !!m.image_col;
-    const done = await waitRun(r.run_id, (x) => status("#w2-status", `⏳ 変換中…（${x.status}）`));
+    const done = await waitRun(r.run_id, (x) => status("#w2-status", `変換中…（${x.status}）`));
     if (done.status !== "SUCCESS") throw new Error(`変換ジョブが ${done.status} で終わりました（下の「すべての実行状況」でログを確認してください）`);
-    status("#w2-status", `✅ 変換しました：${escapeHtml(CFG.volume)}/custom/${escapeHtml(r.name)}/（train.parquet / test.parquet）`, "pass");
+    status("#w2-status", `✓ 変換しました：${escapeHtml(CFG.volume)}/custom/${escapeHtml(r.name)}/（train.parquet / test.parquet）`, "pass");
     unlock(3);
-  } catch (e) { status("#w2-status", `❌ ${escapeHtml(e.message)}`, "fail"); }
+  } catch (e) { status("#w2-status", `✕ ${escapeHtml(e.message)}`, "fail"); }
   finally { $("#c-convert").disabled = false; loadRuns(); }
 }
 
@@ -285,7 +285,7 @@ async function runAgent() {
     W.tests = res.tests || [];
     showReview(res.code, res.report, "AI が作った採点関数");
     await trial(view, view.events);
-  } catch (e) { view.finish(false, "❌ 採点関数を作れませんでした"); status("#w3-status", `❌ ${escapeHtml(e.message)}`, "fail"); }
+  } catch (e) { view.finish(false, "✕ 採点関数を作れませんでした"); status("#w3-status", `✕ ${escapeHtml(e.message)}`, "fail"); }
   finally { $("#c-agent").disabled = false; }
 }
 
@@ -298,7 +298,7 @@ function showReview(code, report, from) {
   $("#c-run-progress").classList.add("hidden");
   $("#c-tests").innerHTML = report ? `<p>AI が作ったテスト：<span class="${report.failed ? "fail" : "pass"}">${report.passed} / ${report.total} 件合格</span>（Sandbox で実行）
     <details><summary class="muted">テストの中身</summary><table class="small"><tr><th></th><th>期待</th><th>実際</th><th>正解</th><th>答え（末尾）</th><th>ねらい</th></tr>${
-    report.results.map((r) => `<tr><td class="${r.ok ? "pass" : "fail"}">${r.ok ? "✔" : "✘"}</td><td>${r.expected}</td><td>${r.got ?? escapeHtml(r.error || "")}</td><td>${escapeHtml(r.ground_truth)}</td><td class="answer">${escapeHtml(r.response_tail)}</td><td>${escapeHtml(r.why)}</td></tr>`).join("")}</table></details></p>` : "";
+    report.results.map((r) => `<tr><td class="${r.ok ? "pass" : "fail"}">${r.ok ? "✓" : "✕"}</td><td>${r.expected}</td><td>${r.got ?? escapeHtml(r.error || "")}</td><td>${escapeHtml(r.ground_truth)}</td><td class="answer">${escapeHtml(r.response_tail)}</td><td>${escapeHtml(r.why)}</td></tr>`).join("")}</table></details></p>` : "";
   status("#w3-status", `採点の候補：<b>${escapeHtml(from)}</b>`);
 }
 
@@ -308,10 +308,10 @@ async function trial(view, base) {
     const { task_id } = await post(`/api/custom/${encodeURIComponent(W.name)}/reward/trial`, { code: getCode(), n: 5 });
     const rows = await pollTask(task_id, view, base);
     W.trialRows = rows;
-    view.finish(true, `✅ 確認テストが終わりました（${rows.length} 問。Sandbox での実行の記録はクリックで開けます）`);
+    view.finish(true, `✓ 確認テストが終わりました（${rows.length} 問。Sandbox での実行の記録はクリックで開けます）`);
     $("#c-trial-out").innerHTML = `<table class="small"><tr><th>点数</th><th>正解</th><th>AI の答え（末尾）</th></tr>${
       rows.map((r) => `<tr><td class="${r.score === 1 ? "pass" : "fail"}">${r.score ?? escapeHtml(r.error || "")}</td><td>${escapeHtml(r.ground_truth)}</td><td class="answer">${escapeHtml((r.response || "").slice(-300))}</td></tr>`).join("")}</table>`;
-  } catch (e) { view.finish(false, "❌ 確認テストに失敗しました"); status("#w3-status", `❌ 確認テストに失敗しました：${escapeHtml(e.message)}`, "fail"); }
+  } catch (e) { view.finish(false, "✕ 確認テストに失敗しました"); status("#w3-status", `✕ 確認テストに失敗しました：${escapeHtml(e.message)}`, "fail"); }
 }
 
 // ---- editor's test button: run the edited code in the Sandbox ----------------------------------------
@@ -332,14 +332,14 @@ async function runCode() {
       : r.load && !r.load.ok ? `読み込めません${r.load.line ? `（${r.load.line} 行目）` : ""}：${r.load.msg}` : null;
     if (bad) {
       markLine((r.syntax && r.syntax.line) || (r.load && r.load.line));
-      view.finish(false, "❌ 実行できませんでした");
-      out.innerHTML = `<p class="fail">❌ ${escapeHtml(bad)}</p>`;
+      view.finish(false, "✕ 実行できませんでした");
+      out.innerHTML = `<p class="fail">✕ ${escapeHtml(bad)}</p>`;
       return;
     }
     const errLine = [...(r.answers || []), ...(r.tests || []), r.case || {}].map((x) => x.line).find(Boolean);
     markLine(errLine);
     const changed = (r.answers || []).filter((a, i) => a.score !== W.trialRows[i]?.score).length;
-    let html = `<p class="pass">✅ 構文チェック OK ・ Sandbox で実行しました</p>`;
+    let html = `<p class="pass">✓ 構文チェック OK ・ Sandbox で実行しました</p>`;
     if ((r.answers || []).length) {
       html += `<h4>確認テストの回答を採点し直した結果（点数が変わったもの：${changed} 件）</h4><table class="small"><tr><th>前の点数</th><th>今の点数</th><th>正解</th><th>AI の答え（末尾）</th></tr>` +
         r.answers.map((a, i) => { const prev = W.trialRows[i]?.score, diff = a.score !== prev;
@@ -355,19 +355,19 @@ async function runCode() {
     }
     if (r.case) html += `<h4>自分で試した1件：<span class="${r.case.score === 1 ? "pass" : "fail"}">${r.case.error ? `エラー：${escapeHtml(r.case.error)}` : `点数 ${r.case.score}`}</span></h4>`;
     out.innerHTML = html;
-    view.finish(true, "✅ Sandbox で実行しました（記録はクリックで開けます）");
+    view.finish(true, "✓ Sandbox で実行しました（記録はクリックで開けます）");
     W.dirty = false;
     $("#c-dirty").textContent = "";
-  } catch (e) { view.finish(false, "❌ 実行に失敗しました"); out.innerHTML = `<p class="fail">❌ ${escapeHtml(e.message)}</p>`; }
+  } catch (e) { view.finish(false, "✕ 実行に失敗しました"); out.innerHTML = `<p class="fail">✕ ${escapeHtml(e.message)}</p>`; }
   finally { $("#c-run").disabled = false; sandboxBadge(); }
 }
 
 async function approve() {
   try {
     await post(`/api/custom/${encodeURIComponent(W.name)}/reward/approve`, { code: getCode() });
-    status("#w3-status", `✅ 採点を決定しました（${escapeHtml(W.rewardFrom || "")}）`, "pass");
+    status("#w3-status", `✓ 採点を決定しました（${escapeHtml(W.rewardFrom || "")}）`, "pass");
     unlock(4);
-  } catch (e) { status("#w3-status", `❌ ${escapeHtml(e.message)}`, "fail"); }
+  } catch (e) { status("#w3-status", `✕ ${escapeHtml(e.message)}`, "fail"); }
 }
 
 // ---- 4. train -----------------------------------------------------------------------------------------------
@@ -378,11 +378,11 @@ async function train() {
   try {
     const r = await post(`/api/custom/${encodeURIComponent(W.name)}/train`, { nodes });
     W.runId = r.run_id; W.experiment = r.experiment;
-    status("#w4-status", `✅ 学習を開始しました（run ${escapeHtml(r.run_id)}）`, "pass");
+    status("#w4-status", `✓ 学習を開始しました（run ${escapeHtml(r.run_id)}）`, "pass");
     unlock(5);
     watch();
     loadRuns();
-  } catch (e) { status("#w4-status", `❌ ${escapeHtml(e.message)}`, "fail"); }
+  } catch (e) { status("#w4-status", `✕ ${escapeHtml(e.message)}`, "fail"); }
   finally { $("#c-train").disabled = false; }
 }
 

@@ -37,7 +37,7 @@
     <section class="card">
       <h2><span class="step">2</span>準備</h2>
       <p class="hint">最初に一度だけ実行します。<b>データ準備は CPU のサーバーレスで動くので GPU は不要</b>です（1分ほど）。
-        終わると前提チェックの「データ」が ✅ になります。疎通確認は 1×A10 で学習用イメージを確認します（任意）。</p>
+        終わると前提チェックの「データ」が ✓ になります。疎通確認は 1×A10 で学習用イメージを確認します（任意）。</p>
       <div id="prep-buttons" class="buttons"></div>
     </section>
 
@@ -90,7 +90,7 @@
         <h4>③ アップロードした data.jsonl のパスを入れて、読み込みます</h4>
         <div class="row">
           <input id="c-path" class="wide">
-          <button id="c-load">読み込む</button>
+          <button id="c-load" class="primary">読み込む</button>
         </div>
       </div>
 
@@ -98,13 +98,13 @@
         <div class="row">
           <label class="choice inline"><input type="radio" name="sk" value="image" checked> 画像＋テキスト（図形の問題）</label>
           <label class="choice inline"><input type="radio" name="sk" value="text"> テキストのみ（算数の文章題）</label>
-          <button id="c-sample">サンプルデータを用意して読み込む</button>
+          <button id="c-sample" class="primary">サンプルデータを用意して読み込む</button>
         </div>
         <p class="muted">公開データ（geo3k / gsm8k）から 72 問の JSONL（と画像）を Volume に作り、自動で読み込みます（CPU・1〜2分）。</p>
       </div>
 
       <div id="src-existing" class="panel hidden">
-        <div class="row"><select id="c-dataset" class="wide"></select><button id="c-use-existing">このデータで進む</button></div>
+        <div class="row"><select id="c-dataset" class="wide"></select><button id="c-use-existing" class="primary">このデータで進む</button></div>
       </div>
       <div id="w1-status" class="status"></div>
     </section>
