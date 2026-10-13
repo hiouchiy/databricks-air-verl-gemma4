@@ -31,9 +31,9 @@ async function loadChecks() {
   try {
     const rows = await api("/api/checks");
     tb.innerHTML = rows.map((c) =>
-      `<tr><td>${c.ok ? "✅" : "⚠️"}</td><td class="name">${escapeHtml(c.name)}</td><td>${escapeHtml(c.detail)}</td></tr>`).join("");
+      `<tr><td>${c.ok ? '<span class="pass">✓</span>' : '<span class="fail">!</span>'}</td><td class="name">${escapeHtml(c.name)}</td><td>${escapeHtml(c.detail)}</td></tr>`).join("");
   } catch (e) {
-    tb.innerHTML = `<tr><td>❌</td><td colspan="2">${escapeHtml(e.message)}</td></tr>`;
+    tb.innerHTML = `<tr><td class="fail">✕</td><td colspan="2">${escapeHtml(e.message)}</td></tr>`;
   }
 }
 
