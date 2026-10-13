@@ -12,6 +12,7 @@
 > JSONL ＋ 画像（画像）の生データから変換し、ひな形の採点関数で学習しました。**テキスト・画像 × 単一ノード・2ノードの
 > 4パターンすべて** `Training Progress 100% (3/3)` → `SUCCESS`。さらに、学習中に書き出された**実際の回答 408 件**の
 > 点数を1件ずつ確かめ、ひな形の取りこぼしを直しています（§4 手順 E）。データの変換は CPU のサーバーレス Jobs で各1分前後です。
+> その後、テキストの生データも JSONL に統一し、手順 A・B（サンプル作成 → 変換）が `SUCCESS` になることを確かめています。
 
 > 「データさえ用意すれば学習できる」と思われがちですが、強化学習では **2. の採点関数が欠かせません**。
 > まず次の「背景」を読んでから、手順に進んでください。
@@ -89,19 +90,19 @@ GRPO 学習（8×H100）
 ## 3. データの形式
 
 ### 3-1. 用意する生データ（変換前）
-1行に1問です。`prep_custom.py` は CSV と JSONL を読めます。
+**1行に1問の JSONL**（`data.jsonl`）で用意してください。テキストでも画像でも同じ形式です
+（ハンズオン用 UI もこの形式を前提にしています。`prep_custom.py` は CSV も読めますが、改行や引用符で崩れやすいため推奨しません）。
 
-**テキストの場合**（CSV の例）
-```csv
-question,answer
-"A shop sells 3 apples for $2. How much do 12 apples cost?",8
+**テキストの場合**
+```json
+{"question": "A shop sells 3 apples for $2. How much do 12 apples cost?", "answer": "8"}
 ```
 
-**画像の場合**（JSONL ＋ 画像ファイルの例）
+**画像の場合**（JSONL ＋ 画像ファイル）
 ```json
 {"question": "Find x.", "answer": "3", "image": "images/0000.png"}
 ```
-- `image` には画像ファイルのパスを書きます（JSONL / CSV の場所からの相対パス、または `/Volumes/...` の絶対パス）。
+- `image` には画像ファイルのパスを書きます（JSONL の場所からの相対パス、または `/Volumes/...` の絶対パス）。
   1問に複数の画像がある場合は `|` で区切ります（例：`images/a.png|images/b.png`）。
 - 列名が違う場合は、`--question-col` / `--answer-col` / `--image-col` で指定できます。
 
@@ -131,14 +132,14 @@ verl は `<image>` が出てきた順に、`images` の画像を当てはめま�
 
 ### 手順 A（任意）：練習用のサンプル生データを作る
 お客様のデータがすでにある場合は飛ばしてください。gsm8k / geo3k から、お客様の生データに見立てた
-CSV（テキスト）と JSONL ＋ 画像（画像）を作ります（CPU・約1分）。
+JSONL（テキスト）と JSONL ＋ 画像（画像）を作ります（CPU・約1分）。
 ```bash
 databricks jobs submit --json @gen/custom_sample_raw_job.json -p PROF
 ```
-→ `$VOL/raw/text/questions.csv` と `$VOL/raw/image/data.jsonl` ＋ `$VOL/raw/image/images/*.png` ができます。
+→ `$VOL/raw/text/data.jsonl` と `$VOL/raw/image/data.jsonl` ＋ `$VOL/raw/image/images/*.png` ができます。
 
 ### 手順 B：生データを verl 形式に変換する（CPU・GPU 不要）
-1. お客様の生データを Volume に置きます（例：`$VOL/raw/text/questions.csv`、`$VOL/raw/image/data.jsonl` と `images/`）。
+1. お客様の生データを Volume に置きます（例：`$VOL/raw/text/data.jsonl`、`$VOL/raw/image/data.jsonl` と `images/`）。
    ```bash
    databricks fs cp -r ./my_raw_data dbfs:$VOL/raw/image -p PROF
    ```
@@ -147,7 +148,7 @@ databricks jobs submit --json @gen/custom_sample_raw_job.json -p PROF
 
    | 項目 | 意味 |
    |---|---|
-   | `--input` | 生データのファイル（CSV / JSONL） |
+   | `--input` | 生データのファイル（JSONL） |
    | `--image-dir` | 画像の相対パスの基準になるフォルダ（画像のときだけ） |
    | `--data-source` | **データの名前**（自由に決めてよい。例：`acme/math-qa`） |
    | `--out` | 変換結果の置き場所（学習 YAML の `train_files` / `val_files` と合わせる） |

@@ -16,7 +16,7 @@ Output (written to --out): train.parquet / test.parquet with these columns
   extra_info   : {"split", "index", "question", "answer"}
 
 Example:
-  python prep_custom.py --input /Volumes/c/s/v/raw/text/questions.csv \
+  python prep_custom.py --input /Volumes/c/s/v/raw/text/data.jsonl \
       --data-source acme/math-qa --out /Volumes/c/s/v/custom/text
   python prep_custom.py --input /Volumes/c/s/v/raw/image/data.jsonl \
       --image-dir /Volumes/c/s/v/raw/image --data-source acme/geometry \

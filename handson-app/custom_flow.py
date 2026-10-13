@@ -79,10 +79,13 @@ def _slug(s: str) -> str:
     return s[:40] or "dataset"
 
 
-def _parse_head(path: str, max_rows: int = 200) -> tuple[list[str], list[dict]]:
+def _parse_head(path: str, max_rows: int = 200, stats: dict | None = None) -> tuple[list[str], list[dict]]:
     if not path.startswith("/Volumes/"):
         raise HTTPException(400, detail="パスは /Volumes/ から始めてください")
     raw = vol_read(path, max_bytes=2_000_000).decode("utf-8", errors="ignore")
+    if stats is not None:  # whole file read? then the row count is exact
+        stats["complete"] = len(raw) < 2_000_000
+        stats["lines"] = sum(1 for l in raw.splitlines() if l.strip())
     if path.endswith((".jsonl", ".json")):
         rows = []
         for line in raw.splitlines():
@@ -153,20 +156,27 @@ def _task(fn, *args):
 
 # ---- 1-3: data -----------------------------------------------------------------------------
 @router.post("/sample-raw")
-def sample_raw(request: Request):
-    """Fabricate customer-style raw data (CSV / JSONL + images) under <VOL>/raw to try the flow."""
+def sample_raw(request: Request, body: dict | None = None):
+    """Fabricate customer-style raw data (data.jsonl [+ images/]) under <VOL>/raw/<kind> to try the flow."""
+    kind = (body or {}).get("kind", "image")
     spec = json.loads(core.render(open(os.path.join(core.TEMPLATES, "custom_sample_raw_job.json")).read()))
+    spec["tasks"] = [t for t in spec["tasks"] if t["task_key"] == kind]
+    if not spec["tasks"]:
+        raise HTTPException(400, detail="kind は text か image を指定してください")
     for t in spec["tasks"]:
         t["spark_python_task"]["python_file"] = f"{core.EXPERIMENT_DIR}/make_sample_raw.py"
-    return _submit_jobs(spec, "custom_sample_raw", core.user_email(request))
+    spec["run_name"] = f"custom-sample-raw-{kind}"
+    return _submit_jobs(spec, "custom_sample_raw", core.user_email(request)) | {"path": f"{core.VOL}/raw/{kind}/data.jsonl"}
 
 
 @router.post("/inspect")
 def inspect(body: dict):
-    cols, rows = _parse_head(body["path"])
+    stats = {}
+    cols, rows = _parse_head(body["path"], max_rows=100000, stats=stats)
     if not cols:
-        raise HTTPException(400, detail="列が見つかりません（CSV はヘッダー行が必要です）")
-    return {"columns": cols, "rows": rows[:5], "n_rows_read": len(rows), "guess": _guess(cols, rows)}
+        raise HTTPException(400, detail="データが読めません。1行に1つの JSON（{\"question\": ..., \"answer\": ...}）が書かれた JSONL か確認してください")
+    n = len(rows) if stats.get("complete") else None
+    return {"columns": cols, "rows": rows[:5], "n_rows": n, "n_rows_at_least": len(rows), "guess": _guess(cols, rows)}
 
 
 @router.post("/preview")
@@ -244,8 +254,8 @@ def datasets():
 
 # ---- 4: reward ---------------------------------------------------------------------------------
 PRESETS = {
-    "standard": "数値・式（標準）: 最後の \\boxed{} を取り出し、表記（カンマ・$・度・%）をそろえて比べる。数値は誤差 1e-6 まで同じとみなす",
-    "exact": "完全一致: 最後の \\boxed{} の中身が正解と完全に一致（前後の空白と大文字小文字は無視）",
+    "numeric": "数値で比べる（標準）",
+    "exact": "文字が完全に同じなら正解",
 }
 EXACT_CODE = '''"""Exact-match reward: the last \\\\boxed{...} must equal ground_truth (case/whitespace-insensitive)."""
 
@@ -286,7 +296,7 @@ def presets():
 
 @router.get("/reward/preset/{pid}")
 def preset_code(pid: str):
-    if pid == "standard":
+    if pid in ("numeric", "standard"):
         return {"code": open(os.path.join(core.TEMPLATES, "custom_reward.py")).read()}
     if pid == "exact":
         return {"code": EXACT_CODE}
@@ -357,7 +367,8 @@ def train(name: str, body: dict, request: Request):
     y = y.replace(f"{core.VOL}/custom/{sub}/", f"{meta['out']}/")
     y = re.sub(r"(?m)^experiment_name: .*$", f"experiment_name: {exp}", y)
     y = re.sub(r"(?m)^mlflow_experiment_directory: .*$", f"mlflow_experiment_directory: {core.EXPERIMENT_DIR}/{exp}", y)
-    y = re.sub(r"trainer\.rollout_data_dir=\S+", f"trainer.rollout_data_dir={ROLLOUT_ROOT}/{exp}", y)
+    roll = f"{exp}-{time.strftime('%Y%m%d-%H%M%S', time.gmtime())}"  # one folder per run: never show an older run's answers
+    y = re.sub(r"trainer\.rollout_data_dir=\S+", f"trainer.rollout_data_dir={ROLLOUT_ROOT}/{roll}", y)
     y = re.sub(r"(?m)^(\s*output_dir: ).*$", rf"\g<1>{core.VOL}/ckpt/{exp}", y)
     email = core.user_email(request)
     if email:
@@ -375,13 +386,17 @@ def train(name: str, body: dict, request: Request):
     if rc != 0 or not m:
         raise HTTPException(502, detail=(err or out).strip()[-2000:])
     core.SUBMITTED[m.group(1)] = {"kind": "custom_train", "label": f"独自データ GRPO: {name}（{sub}・{nodes}ノード）",
-                                  "submitted_by": email, "submitted_at": time.time(), "experiment": exp}
-    return {"run_id": m.group(1), "experiment": exp}
+                                  "submitted_by": email, "submitted_at": time.time(), "experiment": roll}
+    return {"run_id": m.group(1), "experiment": roll}
 
 
 # ---- 6: rollouts -----------------------------------------------------------------------------------
 @router.get("/rollouts/{experiment}")
 def rollouts(experiment: str, step: int | None = None, limit: int = 60):
+    if not re.search(r"-\d{8}-\d{6}$", experiment):  # bare experiment name (app restarted): its latest run
+        runs = sorted(n for n in (e["path"].rstrip("/").split("/")[-1] for e in vol_ls(ROLLOUT_ROOT) if e.get("is_directory"))
+                      if re.fullmatch(re.escape(experiment) + r"-\d{8}-\d{6}", n))
+        experiment = runs[-1] if runs else experiment
     files = sorted((e["path"] for e in vol_ls(f"{ROLLOUT_ROOT}/{experiment}") if e["path"].endswith(".jsonl")),
                    key=lambda p: int(re.sub(r"\D", "", p.split("/")[-1]) or 0))
     if not files:
