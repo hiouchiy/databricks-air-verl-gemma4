@@ -49,113 +49,149 @@
     </div>
 
     <div id="tab-custom" class="hidden">
-    <section class="card guide">
-      <h2><span class="step">1</span>データのファイルを用意する <span class="tag-outside">アプリの外で行う作業</span></h2>
-      <p class="hint">1行に1問のデータを <b>JSONL</b>（または CSV）で作ります。画像を使う場合は、画像ファイルを別のフォルダに置き、各行にそのパスを書きます。</p>
-      <div class="two">
-        <div>
-          <div class="muted">フォルダの例</div>
+    <!-- ① どのデータを使うか ------------------------------------------------------------ -->
+    <section class="card" id="w1">
+      <h2><span class="step">1</span>どのデータを使いますか？</h2>
+      <div class="choices">
+        <label class="choice"><input type="radio" name="src" value="own" checked>
+          <span><b>自分のデータを使う</b><br><span class="muted">手元の質問・正解（・画像）のデータで学習します</span></span></label>
+        <label class="choice"><input type="radio" name="src" value="sample">
+          <span><b>練習用のサンプルデータを使う</b><br><span class="muted">まず流れを試したいとき。数分で自動的に用意します</span></span></label>
+        <label class="choice"><input type="radio" name="src" value="existing">
+          <span><b>以前に変換したデータを使う</b><br><span class="muted">このアプリで変換済みのデータを使い回します</span></span></label>
+      </div>
+
+      <div id="src-own" class="panel">
+        <h4>データの用意のしかた（アプリの外で行います）</h4>
+        <div class="two">
+          <div>
+            <p class="muted">① 1行に1問の <b>JSONL</b> ファイルと、画像を使う場合は画像フォルダを作ります。</p>
 <pre class="sample">mydata/
 ├── data.jsonl
 └── images/
     ├── 0001.png
     └── 0002.jpg</pre>
-          <div class="muted">data.jsonl の中身（1行 = 1問）</div>
 <pre class="sample">{"question": "この部品の欠陥の数はいくつですか？", "answer": "3", "image": "images/0001.png"}
 {"question": "図の角度 x を求めよ。", "answer": "45", "image": "images/0002.jpg"}</pre>
+          </div>
+          <div>
+            <table class="small">
+              <tr><th>項目</th><th>中身</th></tr>
+              <tr><td>question（必須）</td><td>モデルへの質問文</td></tr>
+              <tr><td>answer（必須）</td><td>正解。<b>数値・選択肢・短い語句のように短く1つに決まるもの</b></td></tr>
+              <tr><td>image（任意）</td><td>画像ファイルのパス（data.jsonl からの相対パス）。複数枚は <code>|</code> で区切る</td></tr>
+            </table>
+            <p class="muted">② フォルダごと Volume にアップロードします。<br>
+              画面で：<a id="g-volume-link" target="_blank">カタログエクスプローラーでこの Volume を開く ↗</a> →「このボリュームにアップロード」<br>
+              CLI で：</p><pre class="sample" id="g-cli"></pre>
+          </div>
         </div>
-        <div>
-          <table class="small">
-            <tr><th>列</th><th>中身</th></tr>
-            <tr><td>質問（必須）</td><td>モデルへの質問文。例: <code>question</code></td></tr>
-            <tr><td>正解（必須）</td><td>採点に使う正解。<b>数値・選択肢・短い語句のように短く1つに決まるもの</b>。例: <code>answer</code></td></tr>
-            <tr><td>画像（任意）</td><td>画像ファイルのパス（data.jsonl の場所からの相対パス、または <code>/Volumes/...</code>）。複数枚は <code>|</code> で区切る。例: <code>image</code></td></tr>
-          </table>
-          <p class="muted">列の名前は自由です（手順 3 で、どの列が何かを選びます）。CSV の場合は1行目を列名にしてください。<br>
-            まず試したいだけなら、手順 3 の「サンプルの生データを作る」で練習用のファイルを自動で用意できます。</p>
+        <h4>③ アップロードした data.jsonl のパスを入れて、読み込みます</h4>
+        <div class="row">
+          <input id="c-path" class="wide">
+          <button id="c-load">読み込む</button>
         </div>
       </div>
-    </section>
 
-    <section class="card guide">
-      <h2><span class="step">2</span>ファイルを Volume に置く <span class="tag-outside">アプリの外で行う作業</span></h2>
-      <p class="hint">用意したフォルダを、次の Volume の下にアップロードします（例: <code id="g-target"></code>）。</p>
-      <ul class="steps-list">
-        <li><b>画面で行う場合</b>：<a id="g-volume-link" target="_blank">カタログエクスプローラーでこの Volume を開く ↗</a> → 右上の「<b>このボリュームにアップロード</b>」→ フォルダごとアップロード</li>
-        <li><b>CLI で行う場合</b>：<pre class="sample" id="g-cli"></pre></li>
-      </ul>
-      <p class="muted">アップロードしたら、手順 3 に <code>…/mydata/data.jsonl</code> のパスを入れて「読み込む」を押します。</p>
-    </section>
-
-    <section class="card">
-      <h2><span class="step">3</span>データを指定して変換する</h2>
-      <p class="hint">手順 2 で置いたファイル（data.jsonl / CSV）のパスを入れて「読み込む」→ 列を選ぶ →「変換結果をプレビュー」で確認 →「変換する」（CPU・約1分）。
-        練習用のデータで試すなら「サンプルの生データを作る」（約1分）を押してから、表示されたパスを使ってください。</p>
-      <div class="row">
-        <input id="c-path" class="wide" placeholder="/Volumes/<catalog>/<schema>/<volume>/raw/text/questions.csv">
-        <button id="c-inspect">読み込む</button>
-        <button id="c-sample" class="secondary">サンプルの生データを作る</button>
-      </div>
-      <div id="c-sample-paths" class="muted"></div>
-      <div id="c-inspect-out" class="hidden">
-        <div class="grid">
-          <label>質問の列 <select id="c-qcol"></select></label>
-          <label>正解の列 <select id="c-acol"></select></label>
-          <label>画像の列（任意） <select id="c-icol"></select></label>
-          <label>データの名前 <input id="c-name" placeholder="例: my-geometry"></label>
+      <div id="src-sample" class="panel hidden">
+        <div class="row">
+          <label class="choice inline"><input type="radio" name="sk" value="image" checked> 画像＋テキスト（図形の問題）</label>
+          <label class="choice inline"><input type="radio" name="sk" value="text"> テキストのみ（算数の文章題）</label>
+          <button id="c-sample">サンプルデータを用意して読み込む</button>
         </div>
-        <details><summary class="muted">詳細設定</summary>
+        <p class="muted">公開データ（geo3k / gsm8k）から 72 問の JSONL（と画像）を Volume に作り、自動で読み込みます（CPU・1〜2分）。</p>
+      </div>
+
+      <div id="src-existing" class="panel hidden">
+        <div class="row"><select id="c-dataset" class="wide"></select><button id="c-use-existing">このデータで進む</button></div>
+      </div>
+      <div id="w1-status" class="status"></div>
+    </section>
+
+    <!-- ② 読み込んだ内容を確認して変換 ------------------------------------------------------- -->
+    <section class="card locked" id="w2">
+      <h2><span class="step">2</span>読み込んだ内容を確認して、学習用に変換する</h2>
+      <div id="w2-body">
+        <p id="c-loaded" class="okline"></p>
+        <details id="c-mapping"><summary>項目の割り当て（自動で設定済み。違うときだけ直してください）</summary>
           <div class="grid">
+            <label>質問の項目 <select id="c-qcol"></select></label>
+            <label>正解の項目 <select id="c-acol"></select></label>
+            <label>画像の項目 <select id="c-icol"></select></label>
+            <label>データの名前（保存先のフォルダ名） <input id="c-name"></label>
             <label class="span2">質問の後ろに付ける指示文 <input id="c-instr" class="wide"></label>
             <label class="span2">画像の相対パスの基準フォルダ <input id="c-imgdir" class="wide"></label>
           </div>
         </details>
-        <div class="row"><button id="c-preview" class="secondary">変換結果をプレビュー</button>
-          <button id="c-convert">変換する（CPU）</button></div>
-        <table id="c-head" class="small"></table>
-        <div id="c-preview-out"></div>
-      </div>
-    </section>
-
-    <section class="card">
-      <h2><span class="step">4</span>変換済みのデータを選ぶ</h2>
-      <div class="row"><select id="c-dataset" class="wide"></select><button id="c-ds-refresh" class="secondary">更新</button></div>
-      <div id="c-ds-info" class="muted"></div>
-    </section>
-
-    <section class="card">
-      <h2><span class="step">5</span>採点関数を決める</h2>
-      <p class="hint">GRPO はモデルの答えに付けた<b>点数だけ</b>を手がかりに学習するので、採点のしかたが学習の方向を決めます。
-        型から選ぶか、採点の基準を書いてエージェント（UC のスキル + Claude + Sandbox）に作ってもらいます。<b>最後に人が確認・承認したものだけ</b>が学習に使われます。</p>
-      <div class="row">
-        <select id="c-preset"></select><button id="c-use-preset" class="secondary">この型を使う</button>
-      </div>
-      <div class="row">
-        <textarea id="c-criteria" rows="3" class="wide" placeholder="採点の基準（例：答えは角度の数値。度の記号は無視。0.1 までの誤差は正解。部分点なし）"></textarea>
-        <button id="c-agent">エージェントに作ってもらう</button>
-      </div>
-      <pre id="c-agent-log" class="logs short hidden"></pre>
-      <div id="c-reward-box" class="hidden">
-        <label class="muted">採点関数（custom_reward.py・編集できます）</label>
-        <textarea id="c-code" rows="16" class="code wide"></textarea>
-        <div id="c-tests"></div>
-        <div class="row">
-          <button id="c-trial" class="secondary">試し採点（Claude に問題を解かせて採点）</button>
-          <button id="c-approve">この採点関数を承認する</button>
+        <h4>モデルにはこう渡されます（先頭3問）</h4>
+        <div id="c-preview-out" class="muted">…</div>
+        <div class="action">
+          <button id="c-convert" class="primary">学習用に変換する</button>
+          <span class="muted">JSONL を学習用の形式（parquet）に変換し、<b>学習用</b>と<b>確認用（8問）</b>に分けて保存します。CPU で約1分。</span>
         </div>
-        <div id="c-trial-out"></div>
       </div>
+      <div id="w2-status" class="status"></div>
     </section>
 
-    <section class="card">
-      <h2><span class="step">6</span>学習する</h2>
-      <p class="hint">承認した採点関数で GRPO を実行します。学習中の「回答・正解・点数」は、下の実行状況の「回答と点数」から見られます。</p>
-      <div class="row"><button id="c-train-1">単一ノード（8×H100）</button><button id="c-train-2">2ノード（8×H100 ×2）</button></div>
+    <!-- ③ 採点のしかた ---------------------------------------------------------------------------- -->
+    <section class="card locked" id="w3">
+      <h2><span class="step">3</span>採点のしかたを決める</h2>
+      <p class="hint">GRPO は、モデルの答えに付けた<b>点数だけ</b>を手がかりに学習します。正解の形に合うものを1つ選んでください。
+        選ぶと自動で<b>確認テスト</b>（練習問題を AI に解かせて、この採点で点数を付けてみる）が走ります。</p>
+      <div class="choices">
+        <label class="choice"><input type="radio" name="rw" value="numeric" checked>
+          <span><b>数値で比べる（標準）</b><br><span class="muted">答えが数値や数式のとき。<code>90°</code> と <code>90</code>、<code>$1,200</code> と <code>1200</code>、<code>3.0</code> と <code>3</code> は同じとみなします</span></span></label>
+        <label class="choice"><input type="radio" name="rw" value="exact">
+          <span><b>文字が完全に同じなら正解</b><br><span class="muted">答えが選択肢（A / B / C）や単語のとき。大文字小文字と前後の空白は無視します</span></span></label>
+        <label class="choice"><input type="radio" name="rw" value="agent">
+          <span><b>基準を書いて AI に作ってもらう</b><br><span class="muted">上の2つでは足りないとき。AI（Claude）が採点関数を書き、隔離環境（Sandbox）でテストして仕上げます（1〜2分）</span></span></label>
+      </div>
+      <div id="agent-box" class="panel hidden">
+        <textarea id="c-criteria" rows="3" class="wide" placeholder="例：答えは角度の数値。度の記号は無視。0.1 までの誤差は正解。部分点なし"></textarea>
+        <div class="row"><button id="c-agent">AI に作ってもらう</button></div>
+      </div>
+      <div class="row" id="rw-go-row"><button id="c-rw-go">この方法で確認テストをする</button></div>
+      <pre id="c-agent-log" class="logs short hidden"></pre>
+      <div id="c-review" class="hidden">
+        <div id="c-tests"></div>
+        <h4>確認テストの結果（練習問題を AI に解かせ、この採点で付いた点数）</h4>
+        <p class="muted">正しい答えが 1、間違い・答えていないものが 0 になっていれば OK です。画像の問題は画像も AI に渡しています。</p>
+        <div id="c-trial-out"></div>
+        <details><summary class="muted">採点関数のコードを見る・直す（上級者向け）</summary>
+          <textarea id="c-code" rows="16" class="code wide"></textarea></details>
+        <div class="action"><button id="c-approve" class="primary">この採点で決定</button></div>
+      </div>
+      <div id="w3-status" class="status"></div>
+    </section>
+
+    <!-- ④ 学習 ---------------------------------------------------------------------------------- -->
+    <section class="card locked" id="w4">
+      <h2><span class="step">4</span>学習する</h2>
+      <div class="row">
+        <label class="choice inline"><input type="radio" name="nodes" value="1" checked> 単一ノード（8×H100・約20〜27分）</label>
+        <label class="choice inline"><input type="radio" name="nodes" value="2"> 2ノード（8×H100 ×2）</label>
+      </div>
+      <div class="action"><button id="c-train" class="primary">学習を開始</button>
+        <span class="muted">GPU の課金が始まります。終わると自動で停止します。</span></div>
+      <div id="w4-status" class="status"></div>
+    </section>
+
+    <!-- ⑤ 学習の様子 ------------------------------------------------------------------------------ -->
+    <section class="card locked" id="w5">
+      <h2><span class="step">5</span>学習の様子を見る</h2>
+      <div class="row"><span id="t-status" class="badge"></span><span id="t-info" class="muted"></span>
+        <span id="t-links" class="links"></span><button id="t-cancel" class="danger hidden">停止</button></div>
+      <h4>回答と点数（学習の各ステップで、モデルが書いた答えと、採点で付いた点数）</h4>
+      <div class="row"><select id="r-step"></select><select id="r-filter">
+        <option value="all">すべて</option><option value="0">0点のみ</option><option value="1">満点のみ</option></select>
+        <span id="r-summary" class="muted"></span></div>
+      <table id="r-table" class="small"></table>
+      <details><summary class="muted">ログを見る</summary><pre id="t-logs" class="logs short"></pre></details>
     </section>
     </div>
 
     <section class="card">
-      <h2><span class="step">◎</span>実行状況</h2>
+      <h2><span class="step">◎</span>すべての実行状況</h2>
       <div class="row"><button id="btn-refresh" class="secondary">更新</button><span id="runs-updated" class="muted"></span></div>
       <table id="runs" class="runs">
         <thead><tr><th>ジョブ</th><th>状態</th><th>開始</th><th>リンク</th><th></th></tr></thead>
@@ -169,12 +205,6 @@
         </div>
         <div id="detail-links" class="links"></div>
         <pre id="logs" class="logs">ログを読み込み中…</pre>
-      </div>
-      <div id="rollouts" class="hidden">
-        <div class="row"><h3>回答と点数</h3><select id="r-step"></select><select id="r-filter">
-          <option value="all">すべて</option><option value="0">0点のみ</option><option value="1">満点のみ</option></select>
-          <span id="r-summary" class="muted"></span></div>
-        <table id="r-table" class="small"></table>
       </div>
     </section>
   </main>

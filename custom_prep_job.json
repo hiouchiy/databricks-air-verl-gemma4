@@ -7,7 +7,7 @@
         "python_file": "/Workspace/Users/__WS_EMAIL__/air-handson/prep_custom.py",
         "parameters": [
           "--input",
-          "__VOL__/raw/text/questions.csv",
+          "__VOL__/raw/text/data.jsonl",
           "--data-source",
           "acme/math-qa",
           "--out",
