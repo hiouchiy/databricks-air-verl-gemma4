@@ -22,7 +22,7 @@ import urllib.request
 import zipfile
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -358,6 +358,21 @@ app.include_router(custom_flow.router)
 app.mount("/static", StaticFiles(directory=os.path.join(HERE, "static")), name="static")
 
 
+# Cache busting: browsers kept an old app.js after a redeploy (the new tabs did not switch).
+# Version the static URLs per app start, and tell browsers not to cache the page or assets.
+ASSET_VERSION = str(int(time.time()))
+
+
+@app.middleware("http")
+async def no_cache(request: Request, call_next):
+    resp = await call_next(request)
+    if request.url.path == "/" or request.url.path.startswith("/static/"):
+        resp.headers["Cache-Control"] = "no-cache, must-revalidate"
+    return resp
+
+
 @app.get("/")
 def index():
-    return FileResponse(os.path.join(HERE, "static", "index.html"))
+    html = open(os.path.join(HERE, "static", "index.html")).read()
+    html = re.sub(r'(/static/[\w.-]+\.(?:js|css))"', rf'\1?v={ASSET_VERSION}"', html)
+    return HTMLResponse(html)

@@ -7,7 +7,11 @@ function initCustom() {
   if (customInit) return;
   customInit = true;
   $("#c-instr").value = "Think step by step, then give the final answer in \\boxed{} (for example \\boxed{42}).";
-  $("#c-path").value = `${CFG.volume}/raw/text/questions.csv`;
+  $("#c-path").value = `${CFG.volume}/raw/mydata/data.jsonl`;
+  const parts = CFG.volume.split("/");   // /Volumes/<catalog>/<schema>/<volume>
+  $("#g-target").textContent = `${CFG.volume}/raw/mydata/`;
+  $("#g-volume-link").href = `${CFG.host}/explore/data/volumes/${parts[2]}/${parts[3]}/${parts[4]}`;
+  $("#g-cli").textContent = `databricks fs cp -r ./mydata dbfs:${CFG.volume}/raw/mydata -p <プロファイル>`;
   $("#c-inspect").addEventListener("click", inspect);
   $("#c-sample").addEventListener("click", makeSample);
   $("#c-preview").addEventListener("click", preview);
@@ -91,7 +95,7 @@ async function loadDatasets() {
     const prev = ds();
     $("#c-dataset").innerHTML = DATASETS.length ? DATASETS.map((d) => `<option value="${escapeHtml(d.name)}" ${d.name === prev ? "selected" : ""}>${escapeHtml(d.name)}${
       d.has_images ? "（画像あり）" : "（テキスト）"}${d.converted ? "" : " — 変換中/未変換"}${d.reward_approved ? " — 採点関数 承認済み" : ""}</option>`).join("")
-      : `<option value="">（まだありません。A で変換してください）</option>`;
+      : `<option value="">（まだありません。手順 3 で変換してください）</option>`;
     onDataset();
   } catch (e) { toast(`データ一覧の取得に失敗しました: ${e.message}`, true); }
 }
@@ -141,7 +145,7 @@ async function pollTask(tid, onDone) {
 }
 
 async function runAgent() {
-  if (!ds()) return toast("先に B でデータを選んでください", true);
+  if (!ds()) return toast("先に手順 4 でデータを選んでください", true);
   const b = $("#c-agent"); b.disabled = true;
   try {
     const { task_id } = await api(`/api/custom/${encodeURIComponent(ds())}/reward/agent`, { method: "POST",
@@ -156,7 +160,7 @@ async function runAgent() {
 }
 
 async function runTrial() {
-  if (!ds()) return toast("先に B でデータを選んでください", true);
+  if (!ds()) return toast("先に手順 4 でデータを選んでください", true);
   const b = $("#c-trial"); b.disabled = true;
   try {
     const { task_id } = await api(`/api/custom/${encodeURIComponent(ds())}/reward/trial`, { method: "POST",
@@ -172,7 +176,7 @@ async function runTrial() {
 }
 
 async function approve() {
-  if (!ds()) return toast("先に B でデータを選んでください", true);
+  if (!ds()) return toast("先に手順 4 でデータを選んでください", true);
   if (!confirm("この採点関数を承認して、学習に使います。よろしいですか？")) return;
   try {
     await api(`/api/custom/${encodeURIComponent(ds())}/reward/approve`, { method: "POST",
@@ -183,7 +187,7 @@ async function approve() {
 
 // ---- D: train ------------------------------------------------------------------------------------
 async function train(nodes) {
-  if (!ds()) return toast("先に B でデータを選んでください", true);
+  if (!ds()) return toast("先に手順 4 でデータを選んでください", true);
   if (!confirm(`「${ds()}」で GRPO を投入します（8×H100 × ${nodes}）。よろしいですか？`)) return;
   try {
     const r = await api(`/api/custom/${encodeURIComponent(ds())}/train`, { method: "POST",

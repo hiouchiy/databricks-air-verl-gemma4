@@ -49,10 +49,48 @@
     </div>
 
     <div id="tab-custom" class="hidden">
+    <section class="card guide">
+      <h2><span class="step">1</span>データのファイルを用意する <span class="tag-outside">アプリの外で行う作業</span></h2>
+      <p class="hint">1行に1問のデータを <b>JSONL</b>（または CSV）で作ります。画像を使う場合は、画像ファイルを別のフォルダに置き、各行にそのパスを書きます。</p>
+      <div class="two">
+        <div>
+          <div class="muted">フォルダの例</div>
+<pre class="sample">mydata/
+├── data.jsonl
+└── images/
+    ├── 0001.png
+    └── 0002.jpg</pre>
+          <div class="muted">data.jsonl の中身（1行 = 1問）</div>
+<pre class="sample">{"question": "この部品の欠陥の数はいくつですか？", "answer": "3", "image": "images/0001.png"}
+{"question": "図の角度 x を求めよ。", "answer": "45", "image": "images/0002.jpg"}</pre>
+        </div>
+        <div>
+          <table class="small">
+            <tr><th>列</th><th>中身</th></tr>
+            <tr><td>質問（必須）</td><td>モデルへの質問文。例: <code>question</code></td></tr>
+            <tr><td>正解（必須）</td><td>採点に使う正解。<b>数値・選択肢・短い語句のように短く1つに決まるもの</b>。例: <code>answer</code></td></tr>
+            <tr><td>画像（任意）</td><td>画像ファイルのパス（data.jsonl の場所からの相対パス、または <code>/Volumes/...</code>）。複数枚は <code>|</code> で区切る。例: <code>image</code></td></tr>
+          </table>
+          <p class="muted">列の名前は自由です（手順 3 で、どの列が何かを選びます）。CSV の場合は1行目を列名にしてください。<br>
+            まず試したいだけなら、手順 3 の「サンプルの生データを作る」で練習用のファイルを自動で用意できます。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="card guide">
+      <h2><span class="step">2</span>ファイルを Volume に置く <span class="tag-outside">アプリの外で行う作業</span></h2>
+      <p class="hint">用意したフォルダを、次の Volume の下にアップロードします（例: <code id="g-target"></code>）。</p>
+      <ul class="steps-list">
+        <li><b>画面で行う場合</b>：<a id="g-volume-link" target="_blank">カタログエクスプローラーでこの Volume を開く ↗</a> → 右上の「<b>このボリュームにアップロード</b>」→ フォルダごとアップロード</li>
+        <li><b>CLI で行う場合</b>：<pre class="sample" id="g-cli"></pre></li>
+      </ul>
+      <p class="muted">アップロードしたら、手順 3 に <code>…/mydata/data.jsonl</code> のパスを入れて「読み込む」を押します。</p>
+    </section>
+
     <section class="card">
-      <h2><span class="step">A</span>データを指定する</h2>
-      <p class="hint">Volume に置いた CSV / JSONL を指定します（1行 = 1問。<b>質問</b>と<b>正解</b>の列が必須、画像を使う場合は画像ファイルのパスの列）。
-        正解は、数値・選択肢・短い語句のように<b>短く1つに決まるもの</b>を想定しています。試すだけなら「サンプルの生データを作る」で練習用のデータを用意できます（CPU・約1分）。</p>
+      <h2><span class="step">3</span>データを指定して変換する</h2>
+      <p class="hint">手順 2 で置いたファイル（data.jsonl / CSV）のパスを入れて「読み込む」→ 列を選ぶ →「変換結果をプレビュー」で確認 →「変換する」（CPU・約1分）。
+        練習用のデータで試すなら「サンプルの生データを作る」（約1分）を押してから、表示されたパスを使ってください。</p>
       <div class="row">
         <input id="c-path" class="wide" placeholder="/Volumes/<catalog>/<schema>/<volume>/raw/text/questions.csv">
         <button id="c-inspect">読み込む</button>
@@ -80,13 +118,13 @@
     </section>
 
     <section class="card">
-      <h2><span class="step">B</span>変換済みのデータを選ぶ</h2>
+      <h2><span class="step">4</span>変換済みのデータを選ぶ</h2>
       <div class="row"><select id="c-dataset" class="wide"></select><button id="c-ds-refresh" class="secondary">更新</button></div>
       <div id="c-ds-info" class="muted"></div>
     </section>
 
     <section class="card">
-      <h2><span class="step">C</span>採点関数を決める</h2>
+      <h2><span class="step">5</span>採点関数を決める</h2>
       <p class="hint">GRPO はモデルの答えに付けた<b>点数だけ</b>を手がかりに学習するので、採点のしかたが学習の方向を決めます。
         型から選ぶか、採点の基準を書いてエージェント（UC のスキル + Claude + Sandbox）に作ってもらいます。<b>最後に人が確認・承認したものだけ</b>が学習に使われます。</p>
       <div class="row">
@@ -110,7 +148,7 @@
     </section>
 
     <section class="card">
-      <h2><span class="step">D</span>学習する</h2>
+      <h2><span class="step">6</span>学習する</h2>
       <p class="hint">承認した採点関数で GRPO を実行します。学習中の「回答・正解・点数」は、下の実行状況の「回答と点数」から見られます。</p>
       <div class="row"><button id="c-train-1">単一ノード（8×H100）</button><button id="c-train-2">2ノード（8×H100 ×2）</button></div>
     </section>
