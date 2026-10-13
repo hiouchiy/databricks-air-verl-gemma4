@@ -197,6 +197,7 @@ cd verl-gemma4
 | `grpo_gemma4_mm_multinode.yaml` | 2ノード **マルチモーダル（画像）** の `databricks air` ジョブ定義（§6） |
 | `prep_data.py` / `prep_data_job.json` | 動作確認用の小さな学習データ（gsm8k テキスト + geo3k 画像）を用意するスクリプトと、CPU のサーバーレス Jobs の定義（§4-2。GPU 不要） |
 | `prep_gsm8k_deps.yaml` / `prep_geo3k_deps.yaml` | 同じデータを AI Runtime（1×A10）で用意する場合のジョブ定義（代替。通常は使わない） |
+| `CUSTOM_DATA.md` ほか（`prep_custom.py` / `custom_reward.py` / `grpo_gemma4_custom.yaml` / `grpo_gemma4_mm_custom.yaml` など） | 自分のデータで学習するための手順とひな形（§6-5） |
 | `smoke_test.yaml` / `smoke_test.py` | 依存疎通確認（1×A10、安価） |
 
 > **重要: リポジトリ直下の `*.yaml` / `run_grpo*.sh` はテンプレートです。直接実行しないでください。**
@@ -504,6 +505,11 @@ databricks air run --file gen/grpo_gemma4_mm_multinode.yaml -p PROF --watch
 - ここまでで「小データでの疎通＋報酬が付くこと」は確認済みです。**本番の実学習**では、データ件数・
   ステップ数を増やし、必要に応じてプロンプト整形や報酬関数を用途に合わせて調整してください
   （報酬値そのものはデータ・エポック数で変わります）。
+
+### 6-5. 自分のデータで学習する
+gsm8k / geo3k の代わりに、お客様のデータ（テキスト、または画像＋テキスト）で同じ学習を回す方法は、
+**[CUSTOM_DATA.md](CUSTOM_DATA.md)** にまとめています。データの形式、変換スクリプト（`prep_custom.py`）、
+**採点関数（`custom_reward.py`）がなぜ必要か**、学習 YAML のどこを直すかを説明しています。
 
 ---
 

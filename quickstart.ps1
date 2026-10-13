@@ -80,7 +80,7 @@ Say "テンプレートを環境向けに置換 (gen\ に生成)"
 $GenDir = Join-Path $Root "gen"
 New-Item -ItemType Directory -Force -Path $GenDir | Out-Null
 $Utf8NoBom = New-Object System.Text.UTF8Encoding $false
-$Templates = @("grpo_gemma4.yaml","grpo_gemma4_multinode.yaml","grpo_gemma4_mm.yaml","grpo_gemma4_mm_multinode.yaml","smoke_test.yaml","prep_data_job.json","prep_gsm8k_deps.yaml","prep_geo3k_deps.yaml","run_grpo.sh","run_grpo_multinode.sh")
+$Templates = @("grpo_gemma4.yaml","grpo_gemma4_multinode.yaml","grpo_gemma4_mm.yaml","grpo_gemma4_mm_multinode.yaml","smoke_test.yaml","prep_data_job.json","prep_gsm8k_deps.yaml","prep_geo3k_deps.yaml","run_grpo.sh","run_grpo_multinode.sh","grpo_gemma4_custom.yaml","grpo_gemma4_mm_custom.yaml","custom_sample_raw_job.json","custom_prep_job.json","custom_reward.py")
 foreach ($t in $Templates) {
     $src = Join-Path $Root $t
     if (-not (Test-Path $src)) { continue }
@@ -95,8 +95,10 @@ foreach ($t in $Templates) {
 $PrepDir = "/Workspace/Users/$WsEmail/air-handson"
 Say "データ準備スクリプトをアップロード: $PrepDir/prep_data.py"
 databricks workspace mkdirs $PrepDir -p $Profile_
-databricks workspace import "$PrepDir/prep_data.py" --file (Join-Path $Root "prep_data.py") --format AUTO --overwrite -p $Profile_
-if ($LASTEXITCODE -ne 0) { Fail "prep_data.py のアップロードに失敗しました。" }
+foreach ($f in @("prep_data.py","prep_custom.py","make_sample_raw.py")) {   # prep_custom / make_sample_raw: CUSTOM_DATA.md
+    databricks workspace import "$PrepDir/$f" --file (Join-Path $Root $f) --format AUTO --overwrite -p $Profile_
+    if ($LASTEXITCODE -ne 0) { Fail "$f のアップロードに失敗しました。" }
+}
 
 # ---- 3. 学習用イメージを Artifact Registry に用意 -----------------------------
 if ($ImageSource -eq "skip") {

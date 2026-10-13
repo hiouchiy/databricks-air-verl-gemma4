@@ -139,6 +139,13 @@ databricks air list -p "$PROFILE"            # Ctrl-C on --watch does NOT stop t
 databricks air cancel <RUN_ID> -p "$PROFILE"
 ```
 
+## Training on your own data
+To run the same GRPO on your own Q&A data (text, or images + text), see
+**[CUSTOM_DATA.md](CUSTOM_DATA.md)** (JA): convert CSV/JSONL (+ image files) with `prep_custom.py`
+on a CPU serverless job, write a small scoring function (`custom_reward.py`), and train with
+`grpo_gemma4_custom.yaml` / `grpo_gemma4_mm_custom.yaml`. It also explains why RL needs a scoring
+function — verl only ships scorers for known public `data_source` values.
+
 ## Hands-on UI (Databricks App)
 `handson-app/` is a Databricks App that runs the same steps from a browser (checks → data prep →
 GRPO runs → status / logs / MLflow links → cancel). Deploy with
@@ -160,5 +167,10 @@ GRPO runs → status / logs / MLflow links → cancel). Deploy with
 | `run_grpo.sh` | verl GRPO launcher, single node (Gemma4 fixes: fsdp patch, SDPA, nccl_timeout) |
 | `run_grpo_multinode.sh` | verl GRPO launcher, multi-node (Ray cluster orchestration) |
 | `prep_data.py` / `prep_data_job.json` | tiny gsm8k (text) + geo3k (image) data prep as a **CPU serverless job** (no GPU) |
+| `CUSTOM_DATA.md` | **Train on your own data** (format, scoring function, YAML changes) (JA) |
+| `prep_custom.py` / `custom_prep_job.json` | convert your CSV/JSONL (+ images) to verl parquet (CPU serverless job) |
+| `custom_reward.py` | scoring (reward) function template for your own `data_source` |
+| `grpo_gemma4_custom.yaml` / `grpo_gemma4_mm_custom.yaml` | GRPO on your own data (text / image) |
+| `make_sample_raw.py` / `custom_sample_raw_job.json` | sample "customer-style" raw data to rehearse CUSTOM_DATA.md |
 | `prep_gsm8k_deps.yaml` / `prep_geo3k_deps.yaml` | the same data prep on AI Runtime 1xA10 (alternative; not needed normally) |
 | `smoke_test.yaml` / `smoke_test.py` | 1×A10 import/arch check via the image |
