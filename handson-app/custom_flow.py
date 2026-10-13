@@ -141,8 +141,8 @@ def _task(fn, *args):
     tid = uuid.uuid4().hex[:12]
     TASKS[tid] = {"status": "running", "log": [], "result": None, "error": None, "started": time.time()}
 
-    def progress(msg):
-        TASKS[tid]["log"].append(f"{time.strftime('%H:%M:%S')} {msg}")
+    def progress(msg, **event):  # event: stage / state / detail / cmd / stdout ... (see reward_agent)
+        TASKS[tid]["log"].append({"t": time.time(), "text": msg, **event})
 
     def run():
         try:
@@ -324,6 +324,26 @@ def start_trial(name: str, body: dict):
     meta = _meta(name)
     s = _samples(meta, int(body.get("n", 5)), with_images=True)
     return {"task_id": _task(reward_agent.trial_score, body["code"], s, meta["instruction"], vol_read)}
+
+
+@router.post("/{name}/reward/run")
+def start_run(name: str, body: dict):
+    """Editor's test button: run the edited code in the warm Sandbox."""
+    case = body.get("case")
+    if case and not (str(case.get("response", "")).strip() or str(case.get("ground_truth", "")).strip()):
+        case = None
+    return {"task_id": _task(reward_agent.run_code, body["code"], body.get("answers") or [], body.get("tests") or [], case)}
+
+
+@router.get("/sandbox")
+def sandbox_status():
+    return reward_agent.POOL.status()
+
+
+@router.delete("/sandbox")
+def sandbox_delete():
+    reward_agent.POOL.delete()
+    return reward_agent.POOL.status()
 
 
 @router.get("/task/{tid}")

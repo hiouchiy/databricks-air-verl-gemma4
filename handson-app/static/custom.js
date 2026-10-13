@@ -1,7 +1,8 @@
 // 「自分のデータで学習」: one path, one main button per step.
 //   1 which data -> 2 check & convert -> 3 how to score (+ confirmation test) -> 4 train -> 5 watch
 // Uses api / toast / escapeHtml / loadRuns / CFG from app.js.
-const W = { path: null, cols: [], hasImages: false, name: null, rewardFrom: null, runId: null, experiment: null };
+const W = { path: null, cols: [], hasImages: false, name: null, rewardFrom: null, runId: null, experiment: null,
+  cm: null, trialRows: [], tests: [], dirty: false };
 let customInit = false, watchTimer = null;
 const DEFAULT_INSTR = "Think step by step, then give the final answer in \\boxed{} (for example \\boxed{42}).";
 
@@ -27,7 +28,115 @@ function initCustom() {
   $("#t-cancel").addEventListener("click", () => W.runId && cancel(W.runId));
   $("#r-step").addEventListener("change", () => loadRollouts(W.experiment, $("#r-step").value));
   $("#r-filter").addEventListener("change", () => loadRollouts(W.experiment, $("#r-step").value));
+  $("#c-run").addEventListener("click", runCode);
+  initEditor();
+  sandboxBadge();
   onSource();
+}
+
+// ---- Python editor (CodeMirror 5, bundled under static/vendor) ---------------------------------
+function initEditor() {
+  W.cm = CodeMirror.fromTextArea($("#c-code"), {
+    mode: "python", lineNumbers: true, indentUnit: 4, tabSize: 4, indentWithTabs: false,
+    matchBrackets: true, autoCloseBrackets: true, viewportMargin: Infinity,
+    extraKeys: { Tab: (cm) => cm.execCommand(cm.somethingSelected() ? "indentMore" : "insertSoftTab"), "Shift-Tab": "indentLess",
+                 "Ctrl-Enter": runCode, "Cmd-Enter": runCode },
+  });
+  W.cm.on("change", (_, ch) => {
+    if (ch.origin === "setValue") return;
+    W.dirty = true;
+    $("#c-dirty").textContent = "コードを直しました。テストしてから「この採点で決定」を押すのがおすすめです（Ctrl / ⌘ + Enter でもテストできます）";
+  });
+  $("#c-code-box").addEventListener("toggle", () => W.cm.refresh());   // CodeMirror needs a refresh once visible
+}
+const getCode = () => W.cm ? W.cm.getValue() : $("#c-code").value;
+function setCode(code) { W.cm ? W.cm.setValue(code || "") : ($("#c-code").value = code || ""); markLine(null); W.dirty = false; $("#c-dirty").textContent = ""; }
+function markLine(line) {
+  if (!W.cm) return;
+  if (W.errLine != null) W.cm.removeLineClass(W.errLine, "background", "cm-errline");
+  W.errLine = null;
+  if (line) { W.errLine = line - 1; W.cm.addLineClass(W.errLine, "background", "cm-errline"); W.cm.scrollIntoView({ line: W.errLine, ch: 0 }, 80); }
+}
+
+// ---- Sandbox: live progress + status badge ---------------------------------------------------------
+// Renders the structured events from reward_agent (stage / state / detail / cmd / stdout ...).
+function progressView(el, title) {
+  const firstSeen = new Map(), doneAt = new Map();
+  let events = [], running = true, ticker = null, t0 = Date.now();
+  el.classList.remove("hidden");
+  el.innerHTML = `<details open><summary></summary><ul class="stages"></ul><div class="term"></div></details>`;
+  const sum = el.querySelector("summary"), ul = el.querySelector(".stages"), term = el.querySelector(".term");
+  const fmt = (ms) => ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} 秒`;
+  const kb = (b) => b < 1024 ? `${b} B` : `${(b / 1024).toFixed(1)} KB`;
+  function render() {
+    const stages = new Map();
+    events.forEach((e) => {
+      if (!e.stage) return;
+      if (!firstSeen.has(e.stage)) firstSeen.set(e.stage, e.state === "active" ? Date.now() : null);
+      if (e.state !== "active" && !doneAt.has(e.stage)) doneAt.set(e.stage, Date.now());
+      stages.set(e.stage, e);
+    });
+    ul.innerHTML = [...stages.entries()].map(([key, e]) => {
+      const st = e.state || "done", sb = /^sb-|^test-/.test(key);
+      const t1 = firstSeen.get(key);
+      const tm = st === "active" ? fmt(Date.now() - t1) : e.ms != null ? fmt(e.ms) : t1 ? fmt(doneAt.get(key) - t1) : "";
+      const bar = e.total ? `<div class="bar"><i style="width:${Math.round(100 * (e.done || 0) / e.total)}%"></i></div>` : "";
+      return `<li class="stage ${st}"><span class="ic"></span><span class="lbl">${sb ? `<span class="sb">[Sandbox]</span> ` : ""}${escapeHtml(e.text)}` +
+        `${e.detail ? `<span class="det">${escapeHtml(e.detail)}</span>` : ""}${bar}</span><span class="tm">${tm}</span></li>`;
+    }).join("");
+    const execs = events.filter((e) => e.cmd && e.state !== "active");
+    const live = events.filter((e) => e.cmd).slice(-1)[0];
+    term.innerHTML = `<span class="ttl">Sandbox のターミナル${live && live.sandbox ? `（${escapeHtml(live.sandbox)}）` : ""}</span>\n` +
+      execs.map((e) => `<span class="dim">送ったファイル: ${e.files.map((f) => `${escapeHtml(f.name)}（${kb(f.bytes)}）`).join("、")}</span>\n` +
+        `<span class="cmd">$ ${escapeHtml(e.cmd)}</span>\n` +
+        (e.stderr || []).map((l) => escapeHtml(l)).join("\n") + ((e.stderr || []).length ? "\n" : "") +
+        (e.stdout || []).map((l) => `<span class="dim">${escapeHtml(l)}</span>`).join("\n") + ((e.stdout || []).length ? "\n" : "") +
+        `<span class="${e.exit_code ? "err" : "dim"}">終了コード ${e.exit_code ?? "?"} ・ ${fmt(e.ms || 0)}</span>\n`).join("\n") +
+      (live && live.state === "active" ? `<span class="cmd">$ ${escapeHtml(live.cmd)}</span>\n<span class="cursor"></span>` :
+        running ? `<span class="dim">（待機中）</span> <span class="cursor"></span>` : "");
+    term.scrollTop = term.scrollHeight;
+    const total = fmt(Date.now() - t0);
+    sum.textContent = running ? `⏳ ${title}（${total}）` : `${title} の記録（クリックで開閉）`;
+  }
+  ticker = setInterval(render, 250);
+  setTimeout(sandboxBadge, 1500);
+  return {
+    add(log, base) { events = (base || []).concat(log); render(); },
+    get events() { return events; },
+    finish(ok, note) { running = false; clearInterval(ticker); render(); sandboxBadge(); if (note) sum.textContent = note; el.querySelector("details").open = !ok || el.dataset.keepOpen === "1"; },
+  };
+}
+
+async function pollTask(tid, view, base) {
+  for (;;) {
+    const t = await api(`/api/custom/task/${tid}`);
+    view.add(t.log, base);
+    if (t.status === "done") return t.result;
+    if (t.status === "error") throw new Error(t.error);
+    await new Promise((r) => setTimeout(r, 700));
+  }
+}
+
+let badgeTimer = null;
+async function sandboxBadge() {
+  clearTimeout(badgeTimer);
+  const el = $("#sb-badge");
+  try {
+    const s = await api("/api/custom/sandbox");
+    if (s.running) {
+      const left = Math.max(0, s.idle_limit - s.idle);
+      el.className = "sb-badge " + (s.busy ? "busy" : "on");
+      el.innerHTML = `<span class="dot"></span>Sandbox ${s.busy ? "実行中" : "起動中"}：${escapeHtml(s.id)} ・ 起動から ${Math.floor(s.age / 60)} 分 ・ 実行 ${s.uses} 回` +
+        (s.busy ? "" : ` ・ あと ${Math.ceil(left / 60)} 分使わなければ自動で削除 <button id="sb-del">今すぐ削除</button>`);
+      const b = $("#sb-del");
+      if (b) b.onclick = async () => { b.disabled = true; await api("/api/custom/sandbox", { method: "DELETE" }); sandboxBadge(); };
+    } else {
+      el.className = "sb-badge";
+      el.innerHTML = `<span class="dot"></span>Sandbox：停止中（テストのときに自動で作ります）`;
+    }
+  } catch (e) { el.textContent = ""; }
+  if (!$("#tab-custom").classList.contains("hidden")) badgeTimer = setTimeout(sandboxBadge, 3000);
+  else badgeTimer = setTimeout(sandboxBadge, 15000);
 }
 
 // ---- helpers ----------------------------------------------------------------------------
@@ -43,17 +152,6 @@ async function waitRun(runId, onTick) {
     onTick && onTick(r);
     if (r.terminal) return r;
     await new Promise((res) => setTimeout(res, 5000));
-  }
-}
-async function pollTask(tid) {
-  const log = $("#c-agent-log");
-  log.classList.remove("hidden");
-  for (;;) {
-    const t = await api(`/api/custom/task/${tid}`);
-    log.textContent = t.log.join("\n") + (t.status === "running" ? "\n…" : "");
-    if (t.status === "done") return t.result;
-    if (t.status === "error") throw new Error(t.error);
-    await new Promise((r) => setTimeout(r, 2500));
   }
 }
 function options(sel, cols, chosen, allowEmpty) {
@@ -172,46 +270,101 @@ async function runRewardChoice() {     // presets: load the function, then the c
   $("#c-rw-go").disabled = true;
   try {
     const r = await api(`/api/custom/reward/preset/${v}`);
+    W.tests = [];
     showReview(r.code, null, v === "numeric" ? "数値で比べる（標準）" : "文字が完全に同じなら正解");
-    await trial();
+    await trial(progressView($("#c-progress"), "確認テストを実行中"));
   } finally { $("#c-rw-go").disabled = false; }
 }
 
 async function runAgent() {
   $("#c-agent").disabled = true;
+  const view = progressView($("#c-progress"), "AI が採点関数を作っています");
   try {
     const { task_id } = await post(`/api/custom/${encodeURIComponent(W.name)}/reward/agent`, { criteria: $("#c-criteria").value });
-    const res = await pollTask(task_id);
+    const res = await pollTask(task_id, view);
+    W.tests = res.tests || [];
     showReview(res.code, res.report, "AI が作った採点関数");
-    await trial();
-  } catch (e) { status("#w3-status", `❌ ${escapeHtml(e.message)}`, "fail"); }
+    await trial(view, view.events);
+  } catch (e) { view.finish(false, "❌ 採点関数を作れませんでした"); status("#w3-status", `❌ ${escapeHtml(e.message)}`, "fail"); }
   finally { $("#c-agent").disabled = false; }
 }
 
 function showReview(code, report, from) {
   W.rewardFrom = from;
   $("#c-review").classList.remove("hidden");
-  $("#c-code").value = code || "";
+  setCode(code);
   $("#c-trial-out").innerHTML = "";
+  $("#c-run-out").innerHTML = "";
+  $("#c-run-progress").classList.add("hidden");
   $("#c-tests").innerHTML = report ? `<p>AI が作ったテスト：<span class="${report.failed ? "fail" : "pass"}">${report.passed} / ${report.total} 件合格</span>（Sandbox で実行）
     <details><summary class="muted">テストの中身</summary><table class="small"><tr><th></th><th>期待</th><th>実際</th><th>正解</th><th>答え（末尾）</th><th>ねらい</th></tr>${
     report.results.map((r) => `<tr><td class="${r.ok ? "pass" : "fail"}">${r.ok ? "✔" : "✘"}</td><td>${r.expected}</td><td>${r.got ?? escapeHtml(r.error || "")}</td><td>${escapeHtml(r.ground_truth)}</td><td class="answer">${escapeHtml(r.response_tail)}</td><td>${escapeHtml(r.why)}</td></tr>`).join("")}</table></details></p>` : "";
   status("#w3-status", `採点の候補：<b>${escapeHtml(from)}</b>`);
 }
 
-async function trial() {
+async function trial(view, base) {
+  view = view || progressView($("#c-progress"), "確認テストを実行中");
   try {
-    const { task_id } = await post(`/api/custom/${encodeURIComponent(W.name)}/reward/trial`, { code: $("#c-code").value, n: 5 });
-    const rows = await pollTask(task_id);
+    const { task_id } = await post(`/api/custom/${encodeURIComponent(W.name)}/reward/trial`, { code: getCode(), n: 5 });
+    const rows = await pollTask(task_id, view, base);
+    W.trialRows = rows;
+    view.finish(true, `✅ 確認テストが終わりました（${rows.length} 問。Sandbox での実行の記録はクリックで開けます）`);
     $("#c-trial-out").innerHTML = `<table class="small"><tr><th>点数</th><th>正解</th><th>AI の答え（末尾）</th></tr>${
       rows.map((r) => `<tr><td class="${r.score === 1 ? "pass" : "fail"}">${r.score ?? escapeHtml(r.error || "")}</td><td>${escapeHtml(r.ground_truth)}</td><td class="answer">${escapeHtml((r.response || "").slice(-300))}</td></tr>`).join("")}</table>`;
-    $("#c-agent-log").classList.add("hidden");
-  } catch (e) { status("#w3-status", `❌ 確認テストに失敗しました：${escapeHtml(e.message)}`, "fail"); }
+  } catch (e) { view.finish(false, "❌ 確認テストに失敗しました"); status("#w3-status", `❌ 確認テストに失敗しました：${escapeHtml(e.message)}`, "fail"); }
+}
+
+// ---- editor's test button: run the edited code in the Sandbox ----------------------------------------
+async function runCode() {
+  if (!W.name || $("#c-run").disabled) return;
+  $("#c-run").disabled = true;
+  markLine(null);
+  const view = progressView($("#c-run-progress"), "Sandbox で直したコードを実行中");
+  const out = $("#c-run-out");
+  out.innerHTML = "";
+  try {
+    const { task_id } = await post(`/api/custom/${encodeURIComponent(W.name)}/reward/run`, {
+      code: getCode(), answers: W.trialRows, tests: W.tests,
+      case: { response: $("#c-case-resp").value, ground_truth: $("#c-case-gt").value } });
+    const r = await pollTask(task_id, view);
+    const bad = r.timeout ? "20 秒以内に終わりませんでした（無限ループになっていないか確かめてください）"
+      : r.syntax && !r.syntax.ok ? `構文エラー：${r.syntax.line} 行目：${r.syntax.msg}`
+      : r.load && !r.load.ok ? `読み込めません${r.load.line ? `（${r.load.line} 行目）` : ""}：${r.load.msg}` : null;
+    if (bad) {
+      markLine((r.syntax && r.syntax.line) || (r.load && r.load.line));
+      view.finish(false, "❌ 実行できませんでした");
+      out.innerHTML = `<p class="fail">❌ ${escapeHtml(bad)}</p>`;
+      return;
+    }
+    const errLine = [...(r.answers || []), ...(r.tests || []), r.case || {}].map((x) => x.line).find(Boolean);
+    markLine(errLine);
+    const changed = (r.answers || []).filter((a, i) => a.score !== W.trialRows[i]?.score).length;
+    let html = `<p class="pass">✅ 構文チェック OK ・ Sandbox で実行しました</p>`;
+    if ((r.answers || []).length) {
+      html += `<h4>確認テストの回答を採点し直した結果（点数が変わったもの：${changed} 件）</h4><table class="small"><tr><th>前の点数</th><th>今の点数</th><th>正解</th><th>AI の答え（末尾）</th></tr>` +
+        r.answers.map((a, i) => { const prev = W.trialRows[i]?.score, diff = a.score !== prev;
+          return `<tr><td>${prev ?? "—"}</td><td class="${a.error ? "fail" : a.score === 1 ? "pass" : "fail"} ${diff ? "changed" : ""}">${a.error ? `エラー：${escapeHtml(a.error)}${a.line ? `（${a.line} 行目）` : ""}` : a.score}${diff ? " ←" : ""}</td>` +
+            `<td>${escapeHtml(W.trialRows[i]?.ground_truth ?? "")}</td><td class="answer">${escapeHtml((W.trialRows[i]?.response || "").slice(-200))}</td></tr>`; }).join("") + "</table>";
+      r.answers.forEach((a, i) => { if (W.trialRows[i] && !a.error) W.trialRows[i].score = a.score; });   // next comparison is against this run
+    }
+    if ((r.tests || []).length) {
+      const pass = r.tests.filter((t) => t.ok).length, fails = r.tests.filter((t) => !t.ok);
+      html += `<h4>AI が作ったテスト：<span class="${fails.length ? "fail" : "pass"}">${pass} / ${r.tests.length} 件合格</span></h4>` + (fails.length ?
+        `<table class="small"><tr><th>期待</th><th>実際</th><th>正解</th><th>答え（末尾）</th><th>ねらい</th></tr>${fails.map((t) =>
+          `<tr><td>${t.expected}</td><td class="fail">${t.error ? escapeHtml(t.error) : t.got}</td><td>${escapeHtml(t.ground_truth)}</td><td class="answer">${escapeHtml(t.response_tail)}</td><td>${escapeHtml(t.why)}</td></tr>`).join("")}</table>` : "");
+    }
+    if (r.case) html += `<h4>自分で試した1件：<span class="${r.case.score === 1 ? "pass" : "fail"}">${r.case.error ? `エラー：${escapeHtml(r.case.error)}` : `点数 ${r.case.score}`}</span></h4>`;
+    out.innerHTML = html;
+    view.finish(true, "✅ Sandbox で実行しました（記録はクリックで開けます）");
+    W.dirty = false;
+    $("#c-dirty").textContent = "";
+  } catch (e) { view.finish(false, "❌ 実行に失敗しました"); out.innerHTML = `<p class="fail">❌ ${escapeHtml(e.message)}</p>`; }
+  finally { $("#c-run").disabled = false; sandboxBadge(); }
 }
 
 async function approve() {
   try {
-    await post(`/api/custom/${encodeURIComponent(W.name)}/reward/approve`, { code: $("#c-code").value });
+    await post(`/api/custom/${encodeURIComponent(W.name)}/reward/approve`, { code: getCode() });
     status("#w3-status", `✅ 採点を決定しました（${escapeHtml(W.rewardFrom || "")}）`, "pass");
     unlock(4);
   } catch (e) { status("#w3-status", `❌ ${escapeHtml(e.message)}`, "fail"); }

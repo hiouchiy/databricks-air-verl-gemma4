@@ -82,3 +82,44 @@ code { background: #f1f3f5; padding: 1px 4px; border-radius: 4px; font-size: 12p
 .action { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
 button.primary { padding: 10px 18px; font-weight: 600; }
 h4 { margin: 14px 0 6px; font-size: 13px; }
+
+/* Sandbox: live progress, terminal, status badge */
+.progress { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 10px 0; background: #fbfcfd; }
+.progress > summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+.stages { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 4px; }
+.stage { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; align-items: start; padding: 5px 8px; border-radius: 6px; }
+.stage.active { background: #eef4ff; }
+.stage.error { background: #fdecea; }
+.stage .ic { width: 16px; height: 16px; margin-top: 2px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 12px; }
+.stage.active .ic { border: 2px solid #c7d7fb; border-top-color: var(--run); animation: spin .8s linear infinite; }
+.stage.done .ic::after { content: "✓"; color: var(--ok); font-weight: 700; }
+.stage.error .ic::after { content: "✕"; color: var(--ng); font-weight: 700; }
+.stage .lbl { font-weight: 600; }
+.stage .lbl .sb { color: #0b7285; }
+.stage .det { color: var(--muted); font-size: 12px; font-weight: 400; display: block; }
+.stage .tm { color: var(--muted); font: 12px ui-monospace, Menlo, monospace; }
+.bar { height: 4px; background: #e5e7eb; border-radius: 2px; margin-top: 4px; overflow: hidden; }
+.bar > i { display: block; height: 100%; background: var(--run); transition: width .3s; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.term { background: #0f1720; color: #d7e0ea; border-radius: 8px; padding: 10px 12px; margin-top: 6px; max-height: 260px; overflow: auto;
+        font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-all; }
+.term .ttl { color: #7dd3fc; }
+.term .cmd { color: #a7f3d0; }
+.term .dim { color: #8b98a8; }
+.term .err { color: #fca5a5; }
+.term .cursor { display: inline-block; width: 7px; height: 13px; background: #d7e0ea; vertical-align: -2px; animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.sb-badge { margin-left: auto; font-size: 12px; font-weight: 400; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+.sb-badge .dot { width: 8px; height: 8px; border-radius: 50%; background: #c4c9d0; }
+.sb-badge.on .dot { background: var(--ok); box-shadow: 0 0 0 3px #d5f5e3; }
+.sb-badge.busy .dot { background: var(--run); animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 5px #d6e4ff; } }
+.sb-badge button { padding: 2px 8px; font-size: 11px; }
+
+/* code editor */
+.CodeMirror { border: 1px solid var(--line); border-radius: 6px; height: 360px; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.cm-errline { background: #fde2e1 !important; }
+.case { display: grid; grid-template-columns: 3fr 1fr; gap: 10px; margin: 10px 0; }
+.case label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+.case textarea, .case input { font: 12px ui-monospace, Menlo, monospace; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; }
+td.changed { background: #fff4d6; font-weight: 700; }
