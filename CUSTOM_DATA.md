@@ -9,9 +9,9 @@
 2. **採点関数**：モデルの答えが正しいかを判定する、小さな Python の関数
 
 > **実機検証済み（2026-10-13）**：独自の `data_source`（`acme/math-qa` / `acme/geometry`）で、CSV（テキスト）と
-> JSONL ＋ 画像（画像）の生データから変換し、ひな形の採点関数で学習しました。テキスト（単一ノード 8×H100）・画像
-> （単一ノード 8×H100）とも `Training Progress 100% (3/3)` → `SUCCESS`（報酬 mean：テキスト 1.0 / 0.975 / 1.0、
-> 画像 0.5 / 0.75 / 0.5）。データの変換は CPU のサーバーレス Jobs で各1分前後でした。
+> JSONL ＋ 画像（画像）の生データから変換し、ひな形の採点関数で学習しました。**テキスト・画像 × 単一ノード・2ノードの
+> 4パターンすべて** `Training Progress 100% (3/3)` → `SUCCESS`。さらに、学習中に書き出された**実際の回答 408 件**の
+> 点数を1件ずつ確かめ、ひな形の取りこぼしを直しています（§4 手順 E）。データの変換は CPU のサーバーレス Jobs で各1分前後です。
 
 > 「データさえ用意すれば学習できる」と思われがちですが、強化学習では **2. の採点関数が欠かせません**。
 > まず次の「背景」を読んでから、手順に進んでください。
@@ -67,9 +67,11 @@ NotImplementedError: Reward function is not implemented for data_source='acme/ma
         │  手順 B: prep_custom.py で変換（CPU のサーバーレス Jobs・GPU 不要）
         ▼
 verl 形式の parquet（train.parquet / test.parquet）
-        │  手順 C: grpo_gemma4_custom.yaml（テキスト）/ grpo_gemma4_mm_custom.yaml（画像）
+        │  手順 C・D: grpo_gemma4_custom.yaml（テキスト）/ grpo_gemma4_mm_custom.yaml（画像）
         ▼          ＋ custom_reward.py（採点関数）
 GRPO 学習（8×H100）
+        │  手順 E: 書き出された「回答・正解・点数」を読んで、採点関数を確かめる
+        ▼
 ```
 まず試してみたい場合は、手順 A でサンプルの生データを作ってから B・C に進むと、全体の流れを確認できます。
 
@@ -78,7 +80,8 @@ GRPO 学習（8×H100）
 | `prep_custom.py` | 生データ（CSV / JSONL ＋ 画像）を verl 形式の parquet に変換する |
 | `custom_prep_job.json` | `prep_custom.py` を CPU のサーバーレス Jobs で動かす定義 |
 | `custom_reward.py` | 採点関数のひな形 |
-| `grpo_gemma4_custom.yaml` / `grpo_gemma4_mm_custom.yaml` | 独自データ用の学習 YAML（テキスト / 画像） |
+| `grpo_gemma4_custom.yaml` / `grpo_gemma4_mm_custom.yaml` | 独自データ用の学習 YAML（テキスト / 画像。単一ノード） |
+| `grpo_gemma4_custom_multinode.yaml` / `grpo_gemma4_mm_custom_multinode.yaml` | 同じく 2ノード（8×H100 ×2）版 |
 | `make_sample_raw.py` / `custom_sample_raw_job.json` | 練習用のサンプル生データを作る（手順 A。お客様のデータがあれば不要） |
 
 ---
@@ -158,9 +161,12 @@ databricks jobs submit --json @gen/custom_sample_raw_job.json -p PROF
 
 ### 手順 C：採点関数を用意する
 `custom_reward.py` を開き、必要に応じて直します。ひな形は次の動きをします。
-- モデルの答えから、最後の `\boxed{...}` の中身を取り出す（なければ `####` の後ろ、それもなければ最後の数値）
-- 空白・カンマ・`$` などをそろえてから正解（`ground_truth`）と比べ、一致すれば 1.0、しなければ 0.0
+- モデルの答えから、最後の `\boxed{...}` の中身を取り出す（なければ `####` の後ろ）
+- 空白・カンマ・`$` / `\$`・度（`90^\circ` / `90°`）・`%` をそろえてから正解（`ground_truth`）と比べ、一致すれば 1.0、しなければ 0.0
 - 数値なら `3` と `3.0` を同じとみなす
+- **最終的な答え（`\boxed{}` / `####`）を書いていない回答は 0.0**。回答が長さの上限で途中で切れた場合などです。
+  途中に出てきた数値で採点すると、答え切っていない回答に「まぐれ」で点を与えてしまうためです
+  （どうしても必要なら `FALLBACK_LAST_NUMBER = True` で「最後の数値」で採点できます）
 
 関数の形は次のとおりです（verl がこの名前・引数で呼び出します）。
 ```python
@@ -178,7 +184,30 @@ databricks air run --file gen/grpo_gemma4_custom.yaml -p PROF --watch
 databricks air run --file gen/grpo_gemma4_mm_custom.yaml -p PROF --watch
 ```
 成功すると、ログに `Training Progress: 100% (3/3)` と `critic/rewards/mean`（採点関数が付けた点数の平均）が出て、
-`[run_grpo] verl exit code=0` でジョブが終了します。
+`[run_grpo] verl exit code=0` でジョブが終了します。2ノードの場合は `gen/grpo_gemma4_custom_multinode.yaml` /
+`gen/grpo_gemma4_mm_custom_multinode.yaml` を使います（8×H100 を2台。`TRAIN_BATCH_SIZE` などは setup.md §5-3 の制約に従います）。
+
+### 手順 E：採点関数が正しく採点しているかを確かめる（重要）
+独自データ用の YAML は、学習の各ステップで、**モデルの回答・正解・付いた点数**を
+`$VOL/rollouts/<実験名>/<ステップ番号>.jsonl` に書き出します（`trainer.rollout_data_dir`）。
+点数の平均（`critic/rewards/mean`）だけでは、採点関数の間違いに気づけません。**回答を実際に読んで**確かめてください。
+```bash
+databricks fs cp dbfs:$VOL/rollouts/grpo-gemma4-26b-a4b-custom/1.jsonl . -p PROF
+python3 -c "
+import json
+for l in open('1.jsonl'):
+    r = json.loads(l)
+    print(r['score'], '| 正解:', r['gts'], '| 回答の末尾:', r['output'][-120:].replace(chr(10), ' '))
+" | head -20
+```
+各行に `input`（質問）、`output`（モデルの回答）、`gts`（正解）、`score`（点数）が入っています。次のような
+**取りこぼし**がないかを見ます。
+- **正解なのに 0 点**（例：正解 `90` に対して回答 `\boxed{90^\circ}`）→ `normalize` で表記をそろえる
+- **答え切っていないのに 1 点**（例：途中で切れた回答の中の数値がたまたま正解）→ 最終的な答えだけで採点する
+- 回答が途中で切れてばかりいる → `MAX_RESPONSE_LEN` を増やす
+
+> 実際にこのリポジトリの検証でも、最初のひな形には3つの取りこぼしがありました（度の記号 `90^\circ`、ドル記号 `\$1,200`、
+> 途中で切れた回答のまぐれ当たり）。書き出された 288 件の回答を読んで見つけ、直しています。
 
 ---
 
@@ -230,3 +259,5 @@ command: |
 | `AssertionError: image_offset ... >= len(images)` | `<image>` の数が画像の枚数より多くなっています |
 | 学習データが少なすぎて始まらない | `TRAIN_BATCH_SIZE` を学習データの件数以下にしてください |
 | 一部の行が学習に使われない | `MAX_PROMPT_LEN` を超えた行は外されます。長さを見直してください |
+| 起動中に `429 Too Many Requests`（`huggingface.co`）で失敗する | 複数のノードが同時に Hugging Face からモデル情報を取得し、レート制限にかかっています（2ノードのジョブを2本同時に投入したときに発生しました）。少し時間をおいて再投入するか、ジョブを同時にたくさん投入しないでください |
+| 学習は `exit code=0` で終わったのに、ジョブが `INTERNAL_ERROR` / `FAILED` になる | 学習の終了後、AI Runtime 側の処理で一時的なエラーになることがありました。ログに `Training Progress: 100%` と `[run_grpo] verl exit code=0` があれば、学習自体は完了しています。必要なら再投入してください |
