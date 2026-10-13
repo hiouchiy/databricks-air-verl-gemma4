@@ -10,11 +10,18 @@ data_source you must point verl at this file (see CUSTOM_DATA.md):
   reward.custom_reward_function.name=compute_score
 
 This template: take the last \\boxed{...} in the response (fallback: text after
-"####", then the last number), normalize it, and compare with ground_truth.
-Returns 1.0 for correct, 0.0 otherwise. Edit `extract_answer` / `is_correct`
-to match how answers look in your data. Pure Python, no extra packages.
+"####"), normalize it (spaces, commas, $ / \\$, degrees, %), and compare with
+ground_truth. Returns 1.0 for correct, 0.0 otherwise — including when the
+response never states a final answer (e.g. it was cut off at the length limit).
+Edit `extract_answer` / `normalize` / `is_correct` to match how answers look in
+your data. Pure Python, no extra packages.
 """
 import re
+
+# If True, a response with no \\boxed{} and no "####" is graded by its last number.
+# Off by default: a cut-off response can then get credit for a number it merely
+# mentioned on the way, which rewards unfinished answers.
+FALLBACK_LAST_NUMBER = False
 
 
 def _last_boxed(text: str):
@@ -43,13 +50,17 @@ def extract_answer(response: str):
     m = re.search(r"####\s*(.+)", response)
     if m:
         return m.group(1).strip().splitlines()[0]
-    nums = re.findall(r"-?\d[\d,]*\.?\d*", response)
-    return nums[-1] if nums else None
+    if FALLBACK_LAST_NUMBER:
+        nums = re.findall(r"-?\d[\d,]*\.?\d*", response)
+        return nums[-1] if nums else None
+    return None
 
 
 def normalize(s: str) -> str:
-    s = s.strip().strip("$").strip()
+    s = s.strip().replace("\\$", "").replace("$", "")   # "$12", "\$1,200" -> currency / math delimiters
     s = re.sub(r"\\text\{([^}]*)\}", r"\1", s)
+    # units that do not change the value: degrees (90^\circ, 90°, 90\degree) and percent
+    s = re.sub(r"\^\s*\{?\\circ\}?|°|\\degree|\\%|%", "", s)
     s = s.replace("\\,", "").replace(",", "").replace(" ", "").rstrip(".")
     return s.lower()
 

@@ -4,7 +4,9 @@
 #   1) train_files / val_files : your converted parquet (prep_custom.py output)
 #   2) include_paths            : also upload custom_reward.py (your scoring function)
 #   3) command                  : tell verl to use it (reward.custom_reward_function.*),
-#                                 because your data_source is not a built-in one.
+#                                 because your data_source is not a built-in one,
+#                                 and save each step's answers + scores (rollout_data_dir)
+#                                 so you can check your scoring function.
 # =============================================================================
 # =============================================================================
 # The copy at the repo root is a TEMPLATE (it still has placeholders) — do NOT run it directly.
@@ -94,7 +96,9 @@ parameters:
 command: |
   cd $CODE_SOURCE_PATH
   # <-- CUSTOM: your data_source is not built into verl, so point it at your scoring function.
+  #     rollout_data_dir saves every answer with its score as <step>.jsonl (to check the scorer).
   # (extra args after run_grpo.sh are passed straight to verl)
   bash run_grpo.sh \
     reward.custom_reward_function.path=$CODE_SOURCE_PATH/custom_reward.py \
-    reward.custom_reward_function.name=compute_score
+    reward.custom_reward_function.name=compute_score \
+    trainer.rollout_data_dir=__VOL__/rollouts/grpo-gemma4-26b-a4b-custom

@@ -92,7 +92,7 @@ databricks volumes create "${CATALOG}" "${SCHEMA}" "${VOLUME_NAME}" MANAGED -p "
 # マルチモーダル(§6)用の grpo_gemma4_mm*.yaml も含める。
 say "テンプレートを環境向けに置換 (gen/ に生成)"
 mkdir -p gen
-TEMPLATES="grpo_gemma4.yaml grpo_gemma4_multinode.yaml grpo_gemma4_mm.yaml grpo_gemma4_mm_multinode.yaml smoke_test.yaml prep_data_job.json prep_gsm8k_deps.yaml prep_geo3k_deps.yaml run_grpo.sh run_grpo_multinode.sh grpo_gemma4_custom.yaml grpo_gemma4_mm_custom.yaml custom_sample_raw_job.json custom_prep_job.json custom_reward.py"
+TEMPLATES="grpo_gemma4.yaml grpo_gemma4_multinode.yaml grpo_gemma4_mm.yaml grpo_gemma4_mm_multinode.yaml smoke_test.yaml prep_data_job.json prep_gsm8k_deps.yaml prep_geo3k_deps.yaml run_grpo.sh run_grpo_multinode.sh grpo_gemma4_custom.yaml grpo_gemma4_mm_custom.yaml grpo_gemma4_custom_multinode.yaml grpo_gemma4_mm_custom_multinode.yaml custom_sample_raw_job.json custom_prep_job.json custom_reward.py"
 for t in ${TEMPLATES}; do
   [ -f "$t" ] || continue
   sed -e "s#__IMAGE__#${UC_IMAGE}#g" \

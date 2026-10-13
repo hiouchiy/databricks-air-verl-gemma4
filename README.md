@@ -170,7 +170,8 @@ GRPO runs → status / logs / MLflow links → cancel). Deploy with
 | `CUSTOM_DATA.md` | **Train on your own data** (format, scoring function, YAML changes) (JA) |
 | `prep_custom.py` / `custom_prep_job.json` | convert your CSV/JSONL (+ images) to verl parquet (CPU serverless job) |
 | `custom_reward.py` | scoring (reward) function template for your own `data_source` |
-| `grpo_gemma4_custom.yaml` / `grpo_gemma4_mm_custom.yaml` | GRPO on your own data (text / image) |
+| `grpo_gemma4_custom.yaml` / `grpo_gemma4_mm_custom.yaml` | GRPO on your own data (text / image), 1 node; also dumps each answer + score (`rollout_data_dir`) |
+| `grpo_gemma4_custom_multinode.yaml` / `grpo_gemma4_mm_custom_multinode.yaml` | the same on 2 nodes (16×H100) |
 | `make_sample_raw.py` / `custom_sample_raw_job.json` | sample "customer-style" raw data to rehearse CUSTOM_DATA.md |
 | `prep_gsm8k_deps.yaml` / `prep_geo3k_deps.yaml` | the same data prep on AI Runtime 1xA10 (alternative; not needed normally) |
 | `smoke_test.yaml` / `smoke_test.py` | 1×A10 import/arch check via the image |
