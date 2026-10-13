@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Gemma 4 × verl GRPO ハンズオン</title>
+  <link rel="stylesheet" href="/static/vendor/codemirror/codemirror.css">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -135,7 +136,7 @@
 
     <!-- ③ 採点のしかた ---------------------------------------------------------------------------- -->
     <section class="card locked" id="w3">
-      <h2><span class="step">3</span>採点のしかたを決める</h2>
+      <h2><span class="step">3</span>採点のしかたを決める<span id="sb-badge" class="sb-badge"></span></h2>
       <p class="hint">GRPO は、モデルの答えに付けた<b>点数だけ</b>を手がかりに学習します。正解の形に合うものを1つ選んでください。
         選ぶと自動で<b>確認テスト</b>（練習問題を AI に解かせて、この採点で点数を付けてみる）が走ります。</p>
       <div class="choices">
@@ -151,14 +152,24 @@
         <div class="row"><button id="c-agent">AI に作ってもらう</button></div>
       </div>
       <div class="row" id="rw-go-row"><button id="c-rw-go">この方法で確認テストをする</button></div>
-      <pre id="c-agent-log" class="logs short hidden"></pre>
+      <div id="c-progress" class="progress hidden"></div>
       <div id="c-review" class="hidden">
         <div id="c-tests"></div>
         <h4>確認テストの結果（練習問題を AI に解かせ、この採点で付いた点数）</h4>
         <p class="muted">正しい答えが 1、間違い・答えていないものが 0 になっていれば OK です。画像の問題は画像も AI に渡しています。</p>
         <div id="c-trial-out"></div>
-        <details><summary class="muted">採点関数のコードを見る・直す（上級者向け）</summary>
-          <textarea id="c-code" rows="16" class="code wide"></textarea></details>
+        <details id="c-code-box"><summary class="muted">採点関数のコードを見る・直す（上級者向け）</summary>
+          <p class="hint">直したら「このコードを Sandbox でテスト」を押すと、その場で Sandbox の中で実行します。
+            上の確認テストの回答を<b>採点し直し</b>（AI にはもう一度解かせません）、AI が作ったテストがあればそれも流します。</p>
+          <textarea id="c-code" rows="16" class="code wide"></textarea>
+          <div class="case">
+            <label>自分で1件試す（任意）<textarea id="c-case-resp" rows="2" placeholder="モデルの答え（例：… なので \boxed{90^\circ}）"></textarea></label>
+            <label>正解<input id="c-case-gt" placeholder="例：90"></label>
+          </div>
+          <div class="row"><button id="c-run">このコードを Sandbox でテスト</button><span id="c-dirty" class="muted"></span></div>
+          <div id="c-run-progress" class="progress hidden"></div>
+          <div id="c-run-out"></div>
+        </details>
         <div class="action"><button id="c-approve" class="primary">この採点で決定</button></div>
       </div>
       <div id="w3-status" class="status"></div>
@@ -210,6 +221,10 @@
   </main>
 
   <div id="toast" class="toast hidden"></div>
+  <script src="/static/vendor/codemirror/codemirror.js"></script>
+  <script src="/static/vendor/codemirror/python.js"></script>
+  <script src="/static/vendor/codemirror/matchbrackets.js"></script>
+  <script src="/static/vendor/codemirror/closebrackets.js"></script>
   <script src="/static/app.js"></script>
   <script src="/static/custom.js"></script>
 </body>
