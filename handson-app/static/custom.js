@@ -239,6 +239,7 @@ async function watch() {
   if (!W.runId) return;
   try {
     const d = await api(`/api/runs/${W.runId}`);
+    $("#t-row").classList.remove("hidden");
     $("#t-status").textContent = d.status; $("#t-status").className = "badge " + d.status;
     $("#t-info").textContent = d.duration_seconds != null ? `経過 ${Math.floor(d.duration_seconds / 60)}分${d.duration_seconds % 60}秒` : "";
     $("#t-links").innerHTML = [d.dashboard_url && `<a href="${escapeHtml(d.dashboard_url)}" target="_blank">ジョブ ↗</a>`,
@@ -255,6 +256,7 @@ async function watch() {
 async function showRollouts(experiment) {
   document.querySelector('.tab[data-tab="custom"]').click();
   W.experiment = experiment;
+  if (!W.runId) $("#t-row").classList.add("hidden");   // opened from the run list: status is shown there
   $("#w5").classList.remove("locked");
   await loadRollouts(experiment, "");
   $("#w5").scrollIntoView({ behavior: "smooth" });
