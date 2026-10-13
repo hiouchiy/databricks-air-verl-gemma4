@@ -145,7 +145,7 @@
         <label class="choice"><input type="radio" name="rw" value="exact">
           <span><b>文字が完全に同じなら正解</b><br><span class="muted">答えが選択肢（A / B / C）や単語のとき。大文字小文字と前後の空白は無視します</span></span></label>
         <label class="choice"><input type="radio" name="rw" value="agent">
-          <span><b>基準を書いて AI に作ってもらう</b><br><span class="muted">上の2つでは足りないとき。AI（Claude）が採点関数を書き、隔離環境（Sandbox）でテストして仕上げます（1〜2分）</span></span></label>
+          <span><b>基準を書いて AI に作ってもらう</b><br><span class="muted">上の2つでは足りないとき。隔離環境（Sandbox）の中で <b>Claude Code</b> が UC のスキルを読み、採点関数とテストを書いて仕上げます（1〜2分）</span></span></label>
       </div>
       <div id="agent-box" class="panel hidden">
         <textarea id="c-criteria" rows="3" class="wide" placeholder="例：答えは角度の数値。度の記号は無視。0.1 までの誤差は正解。部分点なし"></textarea>
