@@ -1,0 +1,48 @@
+{
+  "run_name": "custom-sample-raw",
+  "tasks": [
+    {
+      "task_key": "text",
+      "spark_python_task": {
+        "python_file": "/Workspace/Users/__WS_EMAIL__/air-handson/make_sample_raw.py",
+        "parameters": [
+          "--kind",
+          "text",
+          "--out",
+          "__VOL__/raw/text"
+        ]
+      },
+      "environment_key": "cpu",
+      "max_retries": 0
+    },
+    {
+      "task_key": "image",
+      "spark_python_task": {
+        "python_file": "/Workspace/Users/__WS_EMAIL__/air-handson/make_sample_raw.py",
+        "parameters": [
+          "--kind",
+          "image",
+          "--out",
+          "__VOL__/raw/image"
+        ]
+      },
+      "environment_key": "cpu",
+      "max_retries": 0
+    }
+  ],
+  "environments": [
+    {
+      "environment_key": "cpu",
+      "spec": {
+        "environment_version": "4",
+        "dependencies": [
+          "datasets==3.6.0",
+          "fsspec==2025.3.0",
+          "huggingface_hub==0.34.4",
+          "pyarrow>=19.0.0",
+          "pillow"
+        ]
+      }
+    }
+  ]
+}
