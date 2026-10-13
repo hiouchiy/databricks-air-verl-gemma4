@@ -19,7 +19,7 @@ CUSTOM_DATA.md の手順を、画面だけで進められるようにしたも�
 |---|---|---|
 | ① どのデータを使うか | 「自分のデータ」「練習用のサンプル」「以前に変換したデータ」から選ぶ。自分のデータは、1行1問の **JSONL**（＋画像フォルダ）を Volume に置き（画面に形式の例、カタログエクスプローラーへのリンク、`databricks fs cp` のコマンドあり）、パスを入れて「読み込む」 | サンプルは `make_sample_raw.py`（CPU のサーバーレス Jobs） |
 | ② 確認して変換 | 項目（質問・正解・画像）は自動で割り当て、「モデルにはこう渡されます」を自動表示。「学習用に変換する」で JSONL を parquet にし、学習用と確認用（8問）に分ける。以前のデータを選んだ場合は不要 | `prep_custom.py`（CPU のサーバーレス Jobs） |
-| ③ 採点のしかた | 「数値で比べる（標準）」「文字が完全に同じなら正解」「基準を書いて AI に作ってもらう」から1つ選ぶ。どれでも自動で確認テスト（データの問題を AI に解かせ、付いた点数を見せる）が走るので、点数を見て「この採点で決定」 | AI に作ってもらう場合：**UC のスキル**（`grpo-reward-author`）を読んだ **Claude**（Foundation Model API）が採点関数とテストを書き、**Databricks Sandbox** でテスト。失敗したら直す（LangGraph のループ） |
+| ③ 採点のしかた | 「数値で比べる（標準）」「文字が完全に同じなら正解」「基準を書いて AI に作ってもらう」から1つ選ぶ。どれでも自動で確認テスト（データの問題を AI に解かせ、付いた点数を見せる）が走るので、点数を見て「この採点で決定」 | AI に作ってもらう場合：**Databricks Sandbox** の中で **Claude Code**（Sandbox に入っているもの。ワークスペースの AI Gateway 経由）が **UC のスキル**（`grpo-reward-author`）を読み、採点関数とテストを書いて自分でテストする。そのあとアプリが、トークンなしの Sandbox でテストし直す |
 | ④ 学習 | 単一ノード / 2ノードを選んで「学習を開始」 | 独自データ用の YAML（決定した採点関数を使う） |
 | ⑤ 様子を見る | 状態・リンク・ログと、学習中の各ステップの**回答と点数**（最初のステップが終わると表示） | `trainer.rollout_data_dir` の書き出し |
 
@@ -33,7 +33,12 @@ CUSTOM_DATA.md の手順を、画面だけで進められるようにしたも�
   で直せます。「このコードを Sandbox でテスト」（Ctrl / ⌘ + Enter）で、直したコードを Sandbox で実行し、構文チェック、
   確認テストの回答の**採点し直し**（AI にはもう一度解かせない。点数が変わった行に色が付く）、AI が作ったテスト、
   「自分で1件試す」の結果をその場で表示します。エラーの行はエディターで赤くなります。実行は 20 秒で打ち切ります。
-- **Sandbox には Databricks のトークンを入れません**（`identity.databricks_access_token_included: false`）。既定では
+- **Claude Code 用の Sandbox だけは、アプリの SP のトークン入りで作ります**（Claude Code が AI Gateway を使うため）。
+  Claude Code が書き終わったらすぐ削除し、使い回しません。書かれた採点関数とテストは、Claude Code の報告をそのまま
+  使わず、トークンなしの Sandbox でテストし直してから画面に出します。モデルは `AIR_CODING_MODEL`（既定
+  `system.ai.claude-sonnet-5-5`）。Sandbox の Claude Code の既定の設定にあるモデル（`databricks-claude-opus-4-6`）は
+  AI Gateway で 403 になり、Claude Code が何も出さずに止まるため、モデルは必ず指定しています。
+- **それ以外の Sandbox には Databricks のトークンを入れません**（`identity.databricks_access_token_included: false`）。既定では
   作成した人（このアプリでは SP）のトークンが入り、Sandbox で動かしたコードがその権限で Databricks を操作できてしまうためです。
   なお、Sandbox からインターネットには出られます。
 - 起動した Sandbox は使い回し、10 分使わなければ自動で削除します（`AIR_SANDBOX_IDLE_SECONDS` で変更可）。

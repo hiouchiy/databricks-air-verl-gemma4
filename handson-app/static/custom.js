@@ -77,17 +77,19 @@ function progressView(el, title) {
       stages.set(e.stage, e);
     });
     ul.innerHTML = [...stages.entries()].map(([key, e]) => {
-      const st = e.state || "done", sb = /^sb-|^test-/.test(key);
+      const st = e.state || "done", tag = /^cc-create|^cc-delete/.test(key) ? "Sandbox" : /^cc-/.test(key) ? "Claude Code" : /^sb-|^test-/.test(key) ? "Sandbox" : "";
       const t1 = firstSeen.get(key);
-      const tm = st === "active" ? fmt(Date.now() - t1) : e.ms != null ? fmt(e.ms) : t1 ? fmt(doneAt.get(key) - t1) : "";
+      // Claude Code's tool steps are read in batches, so their own durations are not measurable: show none.
+      const tm = tag === "Claude Code" && key !== "cc-init" ? "" : st === "active" ? fmt(Date.now() - t1) : e.ms != null ? fmt(e.ms) : t1 ? fmt(doneAt.get(key) - t1) : "";
       const bar = e.total ? `<div class="bar"><i style="width:${Math.round(100 * (e.done || 0) / e.total)}%"></i></div>` : "";
-      return `<li class="stage ${st}"><span class="ic"></span><span class="lbl">${sb ? `<span class="sb">[Sandbox]</span> ` : ""}${escapeHtml(e.text)}` +
+      return `<li class="stage ${st}"><span class="ic"></span><span class="lbl">${tag ? `<span class="sb">[${tag}]</span> ` : ""}${escapeHtml(e.text)}` +
         `${e.detail ? `<span class="det">${escapeHtml(e.detail)}</span>` : ""}${bar}</span><span class="tm">${tm}</span></li>`;
     }).join("");
     const execs = events.filter((e) => e.cmd && e.state !== "active");
     const live = events.filter((e) => e.cmd).slice(-1)[0];
     term.innerHTML = `<span class="ttl">Sandbox のターミナル${live && live.sandbox ? `（${escapeHtml(live.sandbox)}）` : ""}</span>\n` +
-      execs.map((e) => `<span class="dim">送ったファイル: ${e.files.map((f) => `${escapeHtml(f.name)}（${kb(f.bytes)}）`).join("、")}</span>\n` +
+      execs.map((e) => ((e.files || []).length ? `<span class="dim">送ったファイル: ${e.files.map((f) => `${escapeHtml(f.name)}（${kb(f.bytes)}）`).join("、")}</span>\n` :
+        e.tool ? `<span class="dim">Claude Code が実行:</span>\n` : "") +
         `<span class="cmd">$ ${escapeHtml(e.cmd)}</span>\n` +
         (e.stderr || []).map((l) => escapeHtml(l)).join("\n") + ((e.stderr || []).length ? "\n" : "") +
         (e.stdout || []).map((l) => `<span class="dim">${escapeHtml(l)}</span>`).join("\n") + ((e.stdout || []).length ? "\n" : "") +
@@ -296,7 +298,7 @@ function showReview(code, report, from) {
   $("#c-trial-out").innerHTML = "";
   $("#c-run-out").innerHTML = "";
   $("#c-run-progress").classList.add("hidden");
-  $("#c-tests").innerHTML = report ? `<p>AI が作ったテスト：<span class="${report.failed ? "fail" : "pass"}">${report.passed} / ${report.total} 件合格</span>（Sandbox で実行）
+  $("#c-tests").innerHTML = report ? `<p>AI が作ったテスト：<span class="${report.failed ? "fail" : "pass"}">${report.passed} / ${report.total} 件合格</span>（Claude Code の報告ではなく、アプリがトークンなしの Sandbox でテストし直した結果）
     <details><summary class="muted">テストの中身</summary><table class="small"><tr><th></th><th>期待</th><th>実際</th><th>正解</th><th>答え（末尾）</th><th>ねらい</th></tr>${
     report.results.map((r) => `<tr><td class="${r.ok ? "pass" : "fail"}">${r.ok ? "✓" : "✕"}</td><td>${r.expected}</td><td>${r.got ?? escapeHtml(r.error || "")}</td><td>${escapeHtml(r.ground_truth)}</td><td class="answer">${escapeHtml(r.response_tail)}</td><td>${escapeHtml(r.why)}</td></tr>`).join("")}</table></details></p>` : "";
   status("#w3-status", `採点の候補：<b>${escapeHtml(from)}</b>`);
