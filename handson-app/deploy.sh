@@ -52,8 +52,8 @@ say "サービスプリンシパルに UC の権限を付与"
 "${DB[@]}" grants update catalog "$CATALOG" \
   --json "{\"changes\":[{\"principal\":\"$SP\",\"add\":[\"USE_CATALOG\"]}]}" >/dev/null
 "${DB[@]}" grants update schema "$CATALOG.$SCHEMA" \
-  --json "{\"changes\":[{\"principal\":\"$SP\",\"add\":[\"USE_SCHEMA\",\"READ_VOLUME\",\"WRITE_VOLUME\",\"CREATE_VOLUME\"]}]}" >/dev/null
-echo "  $CATALOG: USE_CATALOG / $CATALOG.$SCHEMA: USE_SCHEMA, READ_VOLUME, WRITE_VOLUME, CREATE_VOLUME"
+  --json "{\"changes\":[{\"principal\":\"$SP\",\"add\":[\"USE_SCHEMA\",\"READ_VOLUME\",\"WRITE_VOLUME\",\"CREATE_VOLUME\",\"CREATE_MODEL\"]}]}" >/dev/null
+echo "  $CATALOG: USE_CATALOG / $CATALOG.$SCHEMA: USE_SCHEMA, READ_VOLUME, WRITE_VOLUME, CREATE_VOLUME, CREATE_MODEL"
 
 say "共有フォルダ $EXPERIMENT_DIR を用意（MLflow 実験とデータ準備スクリプト）"
 "${DB[@]}" workspace mkdirs "$EXPERIMENT_DIR"
@@ -83,7 +83,8 @@ cp -R "$HERE/static" "$BUILD/"
 for t in smoke_test.yaml prep_data_job.json grpo_gemma4.yaml grpo_gemma4_multinode.yaml \
          grpo_gemma4_mm.yaml grpo_gemma4_mm_multinode.yaml run_grpo.sh run_grpo_multinode.sh \
          grpo_gemma4_custom.yaml grpo_gemma4_custom_multinode.yaml grpo_gemma4_mm_custom.yaml \
-         grpo_gemma4_mm_custom_multinode.yaml custom_sample_raw_job.json custom_reward.py; do
+         grpo_gemma4_mm_custom_multinode.yaml custom_sample_raw_job.json custom_reward.py \
+         export_model.py log_model.py; do
   cp "$REPO/$t" "$BUILD/templates/"
 done
 cat > "$BUILD/app.yaml" <<EOF

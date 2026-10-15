@@ -57,6 +57,8 @@ code_source:
     root_path: .
     include_paths:
       - run_grpo.sh
+      - export_model.py         # trained model -> bf16
+      - log_model.py            # trained model -> MLflow (+ Unity Catalog)
       - custom_reward.py        # <-- CUSTOM: your scoring function
 
 # gemma-4-26B-A4B is Apache-2.0 and NOT gated (no HF_TOKEN needed).
@@ -87,6 +89,8 @@ parameters:
   train_files: __VOL__/custom/text/train.parquet   # <-- CUSTOM: your data
   val_files: __VOL__/custom/text/test.parquet   # <-- CUSTOM: your data
   output_dir: __VOL__/ckpt/grpo-gemma4-26b-a4b-custom
+  save_model: true    # log the trained model (bf16, ~53 GB, about +5 min) to this run in MLflow
+  # register_model: <catalog>.<schema>.gemma4_grpo   # also register it in Unity Catalog
   total_epochs: 1
   total_training_steps: 3    # smoke: stop after a few steps
 

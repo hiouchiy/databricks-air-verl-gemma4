@@ -115,7 +115,8 @@ databricks air images push -p "$PROFILE" \
 # 3) Generate gen/ (replace the 3 placeholders __IMAGE__ / __VOL__ / __WS_EMAIL__)
 mkdir -p gen
 for t in grpo_gemma4.yaml grpo_gemma4_multinode.yaml grpo_gemma4_mm.yaml grpo_gemma4_mm_multinode.yaml \
-         smoke_test.yaml prep_data_job.json prep_gsm8k_deps.yaml prep_geo3k_deps.yaml run_grpo.sh run_grpo_multinode.sh; do
+         smoke_test.yaml prep_data_job.json prep_gsm8k_deps.yaml prep_geo3k_deps.yaml run_grpo.sh run_grpo_multinode.sh \
+         export_model.py log_model.py; do
   sed -e "s#__IMAGE__#${IMAGE}#g" -e "s#__VOL__#${VOL}#g" -e "s#__WS_EMAIL__#${EMAIL}#g" "$t" > "gen/$t"
 done
 grep -l -E "__IMAGE__|__VOL__|__WS_EMAIL__" gen/* || echo "OK: no placeholders left"
@@ -166,6 +167,7 @@ GRPO runs → status / logs / MLflow links → cancel). Deploy with
 | `grpo_gemma4_mm_multinode.yaml` | `databricks air` workload: 2-node **multimodal (image)** GRPO (setup.md §6) |
 | `run_grpo.sh` | verl GRPO launcher, single node (Gemma4 fixes: fsdp patch, SDPA, nccl_timeout) |
 | `run_grpo_multinode.sh` | verl GRPO launcher, multi-node (Ray cluster orchestration) |
+| `export_model.py` / `log_model.py` | trained model -> bf16 -> logged to the training run in MLflow (+ registered in Unity Catalog with `register_model`); called at the end of `run_grpo*.sh` when `save_model: true` (setup.md §4-4) |
 | `prep_data.py` / `prep_data_job.json` | tiny gsm8k (text) + geo3k (image) data prep as a **CPU serverless job** (no GPU) |
 | `CUSTOM_DATA.md` | **Train on your own data** (format, scoring function, YAML changes) (JA) |
 | `prep_custom.py` / `custom_prep_job.json` | convert your CSV/JSONL (+ images) to verl parquet (CPU serverless job) |

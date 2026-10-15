@@ -120,6 +120,18 @@ TEST_FILE=${TEST_FILE:-__VOL__/gsm8k/test.parquet}
 CKPTS_DIR=${CKPTS_DIR:-$( [ -n "$HP" ] && getp output_dir || echo "__VOL__/ckpt/grpo-gemma4-26b-a4b" )}
 CKPTS_DIR=${CKPTS_DIR:-__VOL__/ckpt/grpo-gemma4-26b-a4b}
 TOTAL_EPOCHS=${TOTAL_EPOCHS:-$( [ -n "$HP" ] && getp total_epochs || echo 15 )}
+# Trained model (parameters `save_model: true`, optionally `register_model:
+# <catalog>.<schema>.<name>`): see run_grpo.sh. Difference on multiple nodes: the rank
+# that writes the model may run on either node, so it is saved (fp32) to a per-run folder
+# on the Volume, which every node sees; a per-run folder also keeps verl from resuming
+# from an earlier run's checkpoint. The head copies it to its local disk, converts it to bf16 there,
+# logs that to MLflow, and deletes the fp32 copy. Only if MLflow fails is the bf16 model
+# copied to `export_dir` (default <VOL>/models/<run>).
+SAVE_MODEL=${SAVE_MODEL:-$( [ -n "$HP" ] && getp save_model 2>/dev/null || true )}
+REGISTER_MODEL=${REGISTER_MODEL:-$( [ -n "$HP" ] && getp register_model 2>/dev/null || true )}
+EXPORT_DIR=${EXPORT_DIR:-$( [ -n "$HP" ] && getp export_dir 2>/dev/null || true )}
+case "${SAVE_MODEL,,}" in true|1|yes) SAVE_MODEL=1 ;; *) SAVE_MODEL= ;; esac
+[ -n "${REGISTER_MODEL}" ] && SAVE_MODEL=1
 # SMOKE: cap total optimizer steps so we validate the pipeline in minutes, not
 # hours. Full training is left to the customer. Set to 0 to disable the cap.
 TOTAL_TRAIN_STEPS=${TOTAL_TRAIN_STEPS:-$( [ -n "$HP" ] && getp total_training_steps 2>/dev/null || echo 3 )}
@@ -144,6 +156,11 @@ n_devices_per_node=${NDEVICES_PER_NODE:-${LOCAL_WORLD_SIZE:-8}}
 fsdp_size=${FSDP_SIZE:-8}
 
 start_time=$(date +%Y%m%d)_$(date +%H%M%S)
+EXPORT_ARGS=()
+if [ -n "${SAVE_MODEL}" ]; then
+  CKPTS_DIR=${CKPTS_DIR}/run-${start_time}
+  EXPORT_ARGS=( "actor_rollout_ref.actor.checkpoint.save_contents=['hf_model']" )
+fi
 mkdir -p logs
 
 DATA=(
@@ -271,7 +288,7 @@ TRAINER=(
     trainer.balance_batch=False
     trainer.default_local_dir="${CKPTS_DIR}"
     trainer.val_before_train=False
-    trainer.save_freq=-1
+    trainer.save_freq=$( [ -n "${SAVE_MODEL}" ] && echo 1000000 || echo -1 )   # >0: save at the last step only
     trainer.test_freq=-1
     trainer.total_epochs=${TOTAL_EPOCHS}
 )
@@ -360,6 +377,30 @@ python3 -m verl.trainer.main_ppo \
     "${REF[@]}" \
     "${ROLLOUT[@]}" \
     "${TRAINER[@]}" \
+    "${EXPORT_ARGS[@]}" \
     "$@" 2>&1 | tee logs/grpo-gemma4-26b-a4b-${start_time}.log
+
+# Save the trained model on the head (only after a successful training; a failure in
+# the bf16 export or the Volume fallback fails the run through the EXIT trap).
+if [ -n "${SAVE_MODEL}" ]; then
+  HERE=$(dirname "$0")
+  SRC=$(ls -d "${CKPTS_DIR}"/global_step_*/actor/huggingface | sort -V | tail -1)
+  # Copy to local disk first: a sequential cp from the Volume is fast (~450 MB/s), while
+  # reading the safetensors in place (memory-mapped, random access) took ~24 min per 5 GB.
+  echo "[head] copying ${SRC} -> /tmp/model_fp32"
+  time cp -r "${SRC}" /tmp/model_fp32
+  LOCAL_MODEL=/tmp/model_bf16
+  echo "[head] converting /tmp/model_fp32 -> ${LOCAL_MODEL} (bf16)"
+  python3 "${HERE}/export_model.py" --src /tmp/model_fp32 --dst "${LOCAL_MODEL}"
+  if python3 "${HERE}/log_model.py" --src "${LOCAL_MODEL}" ${REGISTER_MODEL:+--register "${REGISTER_MODEL}"}; then
+    echo "[head] trained model saved to MLflow"
+  else
+    EXPORT_DIR=${EXPORT_DIR:-__VOL__/models/grpo-gemma4-26b-a4b-2node-${MLFLOW_RUN_ID:-${start_time}}}
+    echo "[head] MLflow logging failed; copying the model to ${EXPORT_DIR} instead"
+    mkdir -p "${EXPORT_DIR}" && cp -r "${LOCAL_MODEL}/." "${EXPORT_DIR}/"
+    echo "[head] trained model saved to ${EXPORT_DIR}"
+  fi
+  rm -rf "${CKPTS_DIR}"   # the fp32 copy is no longer needed
+fi
 # On success, fall through to the EXIT trap (rc=0). On failure, `set -e` jumps
 # straight to the EXIT trap with verl's non-zero code.

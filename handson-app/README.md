@@ -54,6 +54,11 @@ CUSTOM_DATA.md の手順を、画面だけで進められるようにしたも�
 - **ジョブはアプリのサービスプリンシパル（SP）の権限で投入されます。** Databricks Apps の
   「ユーザーの代理で実行する」機能のスコープには、Jobs / MLflow / AI Runtime の API が含まれないためです。
   代わりに、各ジョブに `permissions` で、画面を操作した人の `CAN_MANAGE` を付けています。
+- **学習済みモデル**：アプリから投入した学習は、終わったモデル（Hugging Face 形式、bf16、約 53 GB）を、その学習の
+  MLflow の run に記録し、Unity Catalog の `<catalog>.<schema>.gemma4_grpo_<実験名>`（例：
+  `gemma4_grpo_custom_mydata_text_1node`）に新しいバージョンとして登録します（setup.md §4-4）。
+  そのため `deploy.sh` は、アプリの SP にスキーマの `CREATE_MODEL` 権限を付けます。学習の時間は、単一ノードで
+  約8分長くなります。
 - MLflow の実験は `/Workspace/Shared/air-handson/` に作られます（全員が開けるように）。データ準備のスクリプト
   `prep_data.py` も `deploy.sh` がここに置き、CPU のサーバーレス Jobs として実行します（GPU が使えないときでも動きます）。
 - ログは `air logs --tail` で取得します（`--download-to` は、サーバーレス環境から MLflow のファイル置き場に

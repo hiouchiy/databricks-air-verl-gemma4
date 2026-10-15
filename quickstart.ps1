@@ -80,7 +80,7 @@ Say "テンプレートを環境向けに置換 (gen\ に生成)"
 $GenDir = Join-Path $Root "gen"
 New-Item -ItemType Directory -Force -Path $GenDir | Out-Null
 $Utf8NoBom = New-Object System.Text.UTF8Encoding $false
-$Templates = @("grpo_gemma4.yaml","grpo_gemma4_multinode.yaml","grpo_gemma4_mm.yaml","grpo_gemma4_mm_multinode.yaml","smoke_test.yaml","prep_data_job.json","prep_gsm8k_deps.yaml","prep_geo3k_deps.yaml","run_grpo.sh","run_grpo_multinode.sh","grpo_gemma4_custom.yaml","grpo_gemma4_mm_custom.yaml","grpo_gemma4_custom_multinode.yaml","grpo_gemma4_mm_custom_multinode.yaml","custom_sample_raw_job.json","custom_prep_job.json","custom_reward.py")
+$Templates = @("grpo_gemma4.yaml","grpo_gemma4_multinode.yaml","grpo_gemma4_mm.yaml","grpo_gemma4_mm_multinode.yaml","smoke_test.yaml","prep_data_job.json","prep_gsm8k_deps.yaml","prep_geo3k_deps.yaml","run_grpo.sh","run_grpo_multinode.sh","grpo_gemma4_custom.yaml","grpo_gemma4_mm_custom.yaml","grpo_gemma4_custom_multinode.yaml","grpo_gemma4_mm_custom_multinode.yaml","custom_sample_raw_job.json","custom_prep_job.json","custom_reward.py","export_model.py","log_model.py")
 foreach ($t in $Templates) {
     $src = Join-Path $Root $t
     if (-not (Test-Path $src)) { continue }
