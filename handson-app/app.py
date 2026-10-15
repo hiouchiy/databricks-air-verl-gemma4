@@ -54,7 +54,7 @@ JOBS = {
     "grpo_mm_1":      {"file": "grpo_gemma4_mm.yaml",           "label": "GRPO 画像 単一ノード",            "nodes": 1},
     "grpo_mm_2":      {"file": "grpo_gemma4_mm_multinode.yaml", "label": "GRPO 画像 2ノード",               "nodes": 2},
 }
-SCRIPTS = ["run_grpo.sh", "run_grpo_multinode.sh"]
+SCRIPTS = ["run_grpo.sh", "run_grpo_multinode.sh", "export_model.py", "log_model.py"]
 PREP_SCRIPT = f"{EXPERIMENT_DIR}/prep_data.py"   # uploaded by deploy.sh
 PREP_RUN_PREFIX = ("prep-data", "custom-prep", "custom-sample-raw")   # serverless CPU jobs
 TERMINAL = {"SUCCESS", "FAILED", "CANCELED", "CANCELLED", "TIMEDOUT", "TIMED_OUT", "INTERNAL_ERROR", "SKIPPED"}
@@ -119,6 +119,16 @@ def render(text: str) -> str:
                 .replace("__WS_EMAIL__", "unused"))
 
 
+def with_uc_model(yaml_text: str) -> str:
+    """Turn the templates' commented `register_model` into this app's Unity Catalog model
+    (<catalog>.<schema>.gemma4_grpo_<experiment>), so each training run's model is
+    logged to its MLflow run and registered as a new version."""
+    m = re.search(r"(?m)^experiment_name: *(\S+)", yaml_text)
+    name = "gemma4_grpo_" + re.sub(r"[^a-z0-9]+", "_", (m.group(1) if m else "run").lower()).strip("_")
+    name = name.replace("gemma4_grpo_grpo_gemma4_26b_a4b", "gemma4_grpo")   # sample YAMLs
+    return re.sub(r"(?m)^  # register_model: .*$", f"  register_model: {CATALOG}.{SCHEMA}.{name}", yaml_text)
+
+
 def build_workdir(kind: str, email: str) -> str:
     """Render the job YAML (+ the launch scripts it uploads) into a fresh directory."""
     job = JOBS[kind]
@@ -128,7 +138,7 @@ def build_workdir(kind: str, email: str) -> str:
         if os.path.exists(src):
             open(os.path.join(wd, name), "w").write(render(open(src).read()))
             os.chmod(os.path.join(wd, name), 0o755)
-    yaml_text = render(open(os.path.join(TEMPLATES, job["file"])).read())
+    yaml_text = with_uc_model(render(open(os.path.join(TEMPLATES, job["file"])).read()))
     if email:
         yaml_text += f"\npermissions:\n  - user_name: {email}\n    level: CAN_MANAGE\n"
     open(os.path.join(wd, job["file"]), "w").write(yaml_text)

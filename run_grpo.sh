@@ -140,6 +140,24 @@ TEST_FILE=${TEST_FILE:-__VOL__/gsm8k/test.parquet}
 CKPTS_DIR=${CKPTS_DIR:-$( [ -n "$HP" ] && getp output_dir || echo "__VOL__/ckpt/grpo-gemma4-26b-a4b" )}
 CKPTS_DIR=${CKPTS_DIR:-__VOL__/ckpt/grpo-gemma4-26b-a4b}
 TOTAL_EPOCHS=${TOTAL_EPOCHS:-$( [ -n "$HP" ] && getp total_epochs || echo 15 )}
+# Trained model (parameters `save_model: true`, optionally `register_model:
+# <catalog>.<schema>.<name>`): the final weights are saved once, at the last step, as a
+# Hugging Face model to this node's local disk (verl writes fp32); export_model.py casts
+# them to bf16 (still local), and log_model.py logs that folder to this job's MLflow run
+# and registers it in Unity Catalog. Only if MLflow fails is the model copied to a Volume
+# (`export_dir`, default <VOL>/models/<run>). Everything stays on local disk until the end:
+# writing 50 GB from here is fast, reading it back from a Volume is not.
+SAVE_MODEL=${SAVE_MODEL:-$( [ -n "$HP" ] && getp save_model 2>/dev/null || true )}
+REGISTER_MODEL=${REGISTER_MODEL:-$( [ -n "$HP" ] && getp register_model 2>/dev/null || true )}
+EXPORT_DIR=${EXPORT_DIR:-$( [ -n "$HP" ] && getp export_dir 2>/dev/null || true )}
+case "${SAVE_MODEL,,}" in true|1|yes) SAVE_MODEL=1 ;; *) SAVE_MODEL= ;; esac
+[ -n "${REGISTER_MODEL}" ] && SAVE_MODEL=1
+EXPORT_ARGS=()
+if [ -n "${SAVE_MODEL}" ]; then
+  CKPTS_DIR=${LOCAL_CKPT_DIR:-/tmp/ckpt}
+  EXPORT_ARGS=( "actor_rollout_ref.actor.checkpoint.save_contents=['hf_model']" )
+  df -h /tmp || true
+fi
 # SMOKE: cap total optimizer steps so we validate the pipeline in minutes, not
 # hours. Full training is left to the customer. Set to 0 to disable the cap.
 TOTAL_TRAIN_STEPS=${TOTAL_TRAIN_STEPS:-$( [ -n "$HP" ] && getp total_training_steps 2>/dev/null || echo 3 )}
@@ -302,7 +320,7 @@ TRAINER=(
     trainer.balance_batch=False
     trainer.default_local_dir="${CKPTS_DIR}"
     trainer.val_before_train=False
-    trainer.save_freq=-1
+    trainer.save_freq=$( [ -n "${SAVE_MODEL}" ] && echo 1000000 || echo -1 )   # >0: save at the last step only
     trainer.test_freq=-1
     trainer.total_epochs=${TOTAL_EPOCHS}
 )
@@ -339,6 +357,25 @@ python3 -m verl.trainer.main_ppo \
     "${REF[@]}" \
     "${ROLLOUT[@]}" \
     "${TRAINER[@]}" \
+    "${EXPORT_ARGS[@]}" \
     "$@" 2>&1 | tee logs/grpo-gemma4-26b-a4b-${start_time}.log
+
+# Save the trained model (runs only after a successful training; a failure in the
+# bf16 export or the Volume fallback fails the run through the EXIT trap).
+if [ -n "${SAVE_MODEL}" ]; then
+  HERE=$(dirname "$0")
+  SRC=$(ls -d "${CKPTS_DIR}"/global_step_*/actor/huggingface | sort -V | tail -1)
+  LOCAL_MODEL=${CKPTS_DIR}/model_bf16
+  echo "[run_grpo] converting ${SRC} -> ${LOCAL_MODEL} (bf16)"
+  python3 "${HERE}/export_model.py" --src "${SRC}" --dst "${LOCAL_MODEL}"
+  if python3 "${HERE}/log_model.py" --src "${LOCAL_MODEL}" ${REGISTER_MODEL:+--register "${REGISTER_MODEL}"}; then
+    echo "[run_grpo] trained model saved to MLflow"
+  else
+    EXPORT_DIR=${EXPORT_DIR:-__VOL__/models/grpo-gemma4-26b-a4b-${MLFLOW_RUN_ID:-${start_time}}}
+    echo "[run_grpo] MLflow logging failed; copying the model to ${EXPORT_DIR} instead"
+    mkdir -p "${EXPORT_DIR}" && cp -r "${LOCAL_MODEL}/." "${EXPORT_DIR}/"
+    echo "[run_grpo] trained model saved to ${EXPORT_DIR}"
+  fi
+fi
 # On success, fall through to the EXIT trap (rc=0). On failure, `set -e` jumps
 # straight to the EXIT trap with verl's non-zero code.

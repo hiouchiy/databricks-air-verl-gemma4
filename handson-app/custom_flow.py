@@ -390,6 +390,7 @@ def train(name: str, body: dict, request: Request):
     roll = f"{exp}-{time.strftime('%Y%m%d-%H%M%S', time.gmtime())}"  # one folder per run: never show an older run's answers
     y = re.sub(r"trainer\.rollout_data_dir=\S+", f"trainer.rollout_data_dir={ROLLOUT_ROOT}/{roll}", y)
     y = re.sub(r"(?m)^(\s*output_dir: ).*$", rf"\g<1>{core.VOL}/ckpt/{exp}", y)
+    y = core.with_uc_model(y)
     email = core.user_email(request)
     if email:
         y += f"\npermissions:\n  - user_name: {email}\n    level: CAN_MANAGE\n"

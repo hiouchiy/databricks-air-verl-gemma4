@@ -191,6 +191,7 @@ cd verl-gemma4
 | `Dockerfile` | カスタムイメージ定義（CUDA13ベース + 全ライブラリ） |
 | `run_grpo.sh` | 単一ノード GRPO 起動スクリプト（Gemma4 向け設定込み） |
 | `run_grpo_multinode.sh` | 2ノード用 GRPO 起動スクリプト（Ray クラスタ形成込み） |
+| `export_model.py` / `log_model.py` | 学習済みモデルを bf16 にして、学習の MLflow の run に記録し、Unity Catalog に登録する（§4-4。`run_grpo*.sh` が学習の最後に呼ぶ） |
 | `grpo_gemma4.yaml` | 単一ノード（8×H100）テキストの `databricks air` ジョブ定義 |
 | `grpo_gemma4_multinode.yaml` | 2ノード（16×H100）テキストの `databricks air` ジョブ定義 |
 | `grpo_gemma4_mm.yaml` | 単一ノード **マルチモーダル（画像）** の `databricks air` ジョブ定義（§6） |
@@ -317,7 +318,8 @@ VOL="/Volumes/${CATALOG}/${SCHEMA}/${VOLUME}"        # §1-4 で作った Volume
 
 mkdir -p gen
 for t in grpo_gemma4.yaml grpo_gemma4_multinode.yaml grpo_gemma4_mm.yaml grpo_gemma4_mm_multinode.yaml \
-         smoke_test.yaml prep_data_job.json prep_gsm8k_deps.yaml prep_geo3k_deps.yaml run_grpo.sh run_grpo_multinode.sh; do
+         smoke_test.yaml prep_data_job.json prep_gsm8k_deps.yaml prep_geo3k_deps.yaml run_grpo.sh run_grpo_multinode.sh \
+         export_model.py log_model.py; do
   sed -e "s#__IMAGE__#${IMAGE}#g" -e "s#__VOL__#${VOL}#g" -e "s#__WS_EMAIL__#${EMAIL}#g" "$t" > "gen/$t"
 done
 grep -l -E "__IMAGE__|__VOL__|__WS_EMAIL__" gen/* || echo "OK: no placeholders left"
@@ -328,7 +330,7 @@ for y in gen/*.yaml; do databricks air run -f "$y" --dry-run -p PROF; done   # �
 ```
 - `OK: no placeholders left` と表示され、7つの YAML すべてで `is valid; not submitting.` と出れば完了です。
 - エディタで各 YAML のプレースホルダを直接書き換えても構いません。その場合も、学習用 YAML は同じディレクトリの
-  `run_grpo*.sh` をアップロードするので、`gen/` に揃えて置いてください。
+  `run_grpo*.sh`・`export_model.py`・`log_model.py`（学習済みモデルの保存。§4-4）をアップロードするので、`gen/` に揃えて置いてください。
 - `quickstart.sh` を使った場合は、このステップは実行済みです（結果は同じです）。
 
 **ここまでで学習可能な状態です。**
@@ -395,6 +397,39 @@ databricks air run --file gen/grpo_gemma4.yaml -p PROF --watch
 > databricks air list -p PROF                 # 実行中のジョブを確認（終了済みも見るなら --all-status）
 > databricks air cancel <RUN_ID> -p PROF      # 不要なジョブを停止
 > ```
+
+### 4-4. 学習済みモデルの保存（MLflow / Unity Catalog）
+GRPO の YAML は `parameters` に `save_model: true` を入れてあり、**学習が終わったモデルを、その学習の
+MLflow の run に記録します**。学習の指標・パラメーターと同じ run に、モデル（Hugging Face 形式、bf16）が
+紐づきます。Unity Catalog にも登録する場合は、`register_model` のコメントを外して登録先を書きます。
+```yaml
+parameters:
+  save_model: true
+  register_model: <catalog>.<schema>.gemma4_grpo   # 任意。指定すると UC のモデルの新しいバージョンになる
+```
+- 中身：`model/` の下に MLmodel と Hugging Face 形式の一式（safetensors、`config.json`、トークナイザー、
+  チャットテンプレート）。`task="llm/v1/chat"` で記録するので、UC が必須とする入出力の型（OpenAI 形式の
+  チャット）が付きます。大きさは約 53 GB（Gemma 4 26B-A4B）。
+- 処理の流れ（`run_grpo.sh` の最後）：verl が最後のステップでだけ Hugging Face 形式で保存（**ノードの
+  ローカルディスク**、fp32）→ `export_model.py` が bf16 に変換（ローカルディスク）→ `log_model.py` が MLflow の
+  run に記録し、指定があれば UC に登録。
+- 追加でかかる時間（実機、単一ノード）：保存 約3分 ＋ bf16 への変換 約1分 ＋ MLflow への記録と UC への登録
+  約4分。
+- **2ノードの場合**（`run_grpo_multinode.sh`）：モデルを書き出す rank はどちらのノードで動くか決まっていないため、
+  fp32 のモデルは**実行ごとのフォルダ**（`<output_dir>/run-<日時>`）に Volume 上で保存し、ヘッドが `cp` で
+  ローカルディスクに写してから bf16 に変換・記録します（実機：`cp` 約3分 ＋ 変換 約1分 ＋ 記録と登録 約4分）。
+  記録が終わったら、Volume 上の fp32 のコピーは削除します。実行ごとにフォルダを分けているのは、verl が保存先に
+  前回のチェックポイントを見つけると、そこから学習を再開してしまうためです。Volume 上のファイルを `cp` せずに
+  その場で読むと非常に遅い（5 GB で約24分）ので、必ずローカルに写してから変換します。
+- UC に登録するには、学習を実行する人（アプリから実行する場合はアプリの SP）に、スキーマの `CREATE_MODEL`
+  権限が必要です。
+- **MLflow への記録に失敗した場合だけ**、モデルを Volume にコピーします（`export_dir`。省略時は
+  `<Volume>/models/<run>`）。保存したくない場合は `save_model: true` の行を消してください。
+
+> **補足（実機で分かったこと）**: verl に Hugging Face 形式で保存させると、`config.json` には bfloat16 と
+> 書かれていても、中身は学習中の fp32 の重み（約 106 GB）になります。`export_model.py` はこれを bf16 にします。
+> また、Volume に置いた 100 GB 級のファイルを CPU のサーバーレス Jobs で読み直すと非常に遅い（5 GB で約14分）
+> ため、変換と記録はすべて学習ノードのローカルディスク上で行っています。
 
 ---
 
